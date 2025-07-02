@@ -88,7 +88,7 @@ async def handle_message(request: Request):
 @app.get("/")
 async def root():
     logging.info("Root endpoint hit!")
-    return {"message": "Hello, how may I help you today?"}
+    return {"message": "Hello, I'm IMEX Assist, how may I help you today?"}
 
 if __name__ == "__main__":
     import uvicorn
