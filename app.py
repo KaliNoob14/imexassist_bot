@@ -35,6 +35,23 @@ async def send_text_message(recipient_id: str, message_text: str):
         if response is not None:
             logging.error(f"Response: {response.text}")
 
+def detect_language(text):
+    try:
+        lang = detect(text)
+        print(f"[DEBUG] langdetect result: {lang}")
+        # Custom check for Malagasy, since langdetect may not support it well
+        malagasy_keywords = ["manao ahoana", "miarahaba", "azafady", "tsara", "eny", "tsia"]
+        if any(word in text.lower() for word in malagasy_keywords):
+            return "mg"
+        return lang
+    except LangDetectException as e:
+        print(f"[DEBUG] Language detection error: {e}")
+        # Fallback: check for Malagasy keywords
+        malagasy_keywords = ["manao ahoana", "miarahaba", "azafady", "tsara", "eny", "tsia"]
+        if any(word in text.lower() for word in malagasy_keywords):
+            return "mg"
+        return "unknown"
+
 # Webhook Verification Endpoint
 @app.get("/webhook")
 async def verify_webhook(request: Request):
@@ -64,8 +81,8 @@ async def verify_webhook(request: Request):
 @app.post("/webhook")
 async def handle_message(request: Request):
     data = await request.json()
-    logging.info(f"[DEBUG] /webhook POST called")
-    logging.info(f"[DEBUG] Received webhook data: {data}")
+    print(f"[DEBUG] /webhook POST called")
+    print(f"[DEBUG] Received webhook data: {data}")
 
     if data.get("object") == "page":
         for entry in data.get("entry", []):
@@ -75,15 +92,10 @@ async def handle_message(request: Request):
                 # Handle text messages
                 if "message" in messaging_event and "text" in messaging_event["message"]:
                     message_text = messaging_event["message"]["text"]
-                    logging.info(f"[DEBUG] Received message from {sender_id}: {message_text}")
+                    print(f"[DEBUG] Received message from {sender_id}: {message_text}")
 
-                    # --- Language detection and response ---
-                    try:
-                        lang = detect(message_text)
-                        logging.info(f"[DEBUG] Detected language: {lang}")
-                    except LangDetectException as e:
-                        lang = "unknown"
-                        logging.error(f"[DEBUG] Language detection error: {e}")
+                    # --- Improved language detection and response ---
+                    lang = detect_language(message_text)
 
                     if lang == "fr":
                         reply = "Bonjour! Je parle français."
@@ -95,12 +107,12 @@ async def handle_message(request: Request):
                         reply = "Sorry, I couldn't detect your language."
 
                     await send_text_message(sender_id, reply)
-                    # --- End language detection and response ---
+                    # --- End improved language detection and response ---
 
                 # Handle postback from buttons/persistent menu
                 elif "postback" in messaging_event:
                     payload = messaging_event["postback"]["payload"]
-                    logging.info(f"[DEBUG] Received postback from {sender_id}: {payload}")
+                    print(f"[DEBUG] Received postback from {sender_id}: {payload}")
                     await send_text_message(sender_id, f"Received payload: {payload}")
     return Response(content="OK", status_code=200)
 
