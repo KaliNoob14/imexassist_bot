@@ -39,17 +39,24 @@ def detect_language(text):
     try:
         lang = detect(text)
         print(f"[DEBUG] langdetect result: {lang}")
-        # Custom check for Malagasy, since langdetect may not support it well
-        malagasy_keywords = ["manao ahoana", "miarahaba", "azafady", "tsara", "eny", "tsia"]
+        # Custom check for Malagasy
+        malagasy_keywords = ["manao ahoana", "miarahaba", "azafady", "tsara", "eny", "tsia", "salama"]
         if any(word in text.lower() for word in malagasy_keywords):
             return "mg"
+        # Custom check for French
+        french_keywords = ["bonjour", "merci", "oui", "non", "ça va", "comment"]
+        if any(word in text.lower() for word in french_keywords):
+            return "fr"
         return lang
     except LangDetectException as e:
         print(f"[DEBUG] Language detection error: {e}")
-        # Fallback: check for Malagasy keywords
+        # Fallback: check for Malagasy or French keywords
         malagasy_keywords = ["manao ahoana", "miarahaba", "azafady", "tsara", "eny", "tsia"]
+        french_keywords = ["bonjour", "merci", "oui", "non", "ça va", "comment"]
         if any(word in text.lower() for word in malagasy_keywords):
             return "mg"
+        if any(word in text.lower() for word in french_keywords):
+            return "fr"
         return "unknown"
 
 # Webhook Verification Endpoint
