@@ -1,0 +1,24 @@
+steps:
+  - name: "gcr.io/cloud-builders/docker"
+    args: ["build", "-t", "gcr.io/$PROJECT_ID/imexassist-bot", "."]
+
+  - name: "gcr.io/cloud-builders/docker"
+    args: ["push", "gcr.io/$PROJECT_ID/imexassist-bot"]
+
+  - name: "gcr.io/google.com/cloudsdktool/cloud-sdk"
+    entrypoint: "gcloud"
+    args:
+      [
+        "run",
+        "deploy",
+        "imexassist-bot",
+        "--image",
+        "gcr.io/$PROJECT_ID/imexassist-bot",
+        "--region",
+        "europe-west1",
+        "--platform",
+        "managed",
+        "--allow-unauthenticated",
+        "--set-env-vars",
+        "PAGE_ACCESS_TOKEN=EAATigQ5jnQwBO6dnLh48poyAScQv0nvZA59uWgBY36RSr9tlkFfNsCRdMubEPJVOymplZAwGx2xEANw7GvEMJaZBPfpQAeFbkhxQYadO08QjcqZAFA5xwIhL95ZBvfEr5J5MNf3i1YVtnqcPEqZCxIKdlMZBWVsvebBh47nalTzLOlUofnag7su1cSERGilmjFs9gpdibmoZBgZDZD,VERIFY_TOKEN=imexassist_IMEXMCEMBT2025_july2025",
+      ]
