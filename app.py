@@ -4,6 +4,7 @@ from dotenv import load_dotenv
 import os
 import requests
 import logging
+from langdetect import detect, LangDetectException
 
 load_dotenv() # Load environment variables from .env during local dev
 
@@ -75,7 +76,26 @@ async def handle_message(request: Request):
                 if "message" in messaging_event and "text" in messaging_event["message"]:
                     message_text = messaging_event["message"]["text"]
                     logging.info(f"[DEBUG] Received message from {sender_id}: {message_text}")
-                    await send_text_message(sender_id, f"Received: {message_text} - Bot is alive!")
+
+                    # --- Language detection and response ---
+                    try:
+                        lang = detect(message_text)
+                        logging.info(f"[DEBUG] Detected language: {lang}")
+                    except LangDetectException as e:
+                        lang = "unknown"
+                        logging.error(f"[DEBUG] Language detection error: {e}")
+
+                    if lang == "fr":
+                        reply = "Bonjour! Je parle français."
+                    elif lang == "mg":
+                        reply = "Miarahaba! Mahay miteny malagasy aho."
+                    elif lang == "en":
+                        reply = "Hello! I speak English."
+                    else:
+                        reply = "Sorry, I couldn't detect your language."
+
+                    await send_text_message(sender_id, reply)
+                    # --- End language detection and response ---
 
                 # Handle postback from buttons/persistent menu
                 elif "postback" in messaging_event:
