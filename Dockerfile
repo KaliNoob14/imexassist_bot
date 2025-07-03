@@ -13,7 +13,7 @@ RUN apt-get update && apt-get install -y build-essential
 # Install any needed packages specified in requirements.txt
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Copy the rest of your application code into the container
+# Copy the rest of your application code and the fastText model into the container
 COPY . .
 
 # Cloud Run expects the application to listen on the port specified by the PORT environment variable
