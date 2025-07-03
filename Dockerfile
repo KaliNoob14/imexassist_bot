@@ -26,3 +26,5 @@ CMD ["sh", "-c", "uvicorn app:app --host 0.0.0.0 --port $PORT"]
 EXPOSE 8080
 
 ENV PYTHONUNBUFFERED=1
+
+RUN ls -lh /app
