@@ -8,7 +8,10 @@ WORKDIR /app
 COPY requirements.txt .
 
 # Install build tools for fasttext and other native extensions
-RUN apt-get update && apt-get install -y build-essential
+RUN apt-get update && apt-get install -y build-essential curl
+
+# Download the fastText language identification model
+RUN curl -O https://dl.fbaipublicfiles.com/fasttext/supervised-models/lid.176.bin
 
 # Install any needed packages specified in requirements.txt
 RUN pip install --no-cache-dir -r requirements.txt
