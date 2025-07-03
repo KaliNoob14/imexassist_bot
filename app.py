@@ -5,6 +5,7 @@ import os
 import requests
 import logging
 from langdetect import detect, LangDetectException
+import fasttext
 
 load_dotenv() # Load environment variables from .env during local dev
 
@@ -17,6 +18,9 @@ PAGE_ACCESS_TOKEN = os.getenv("PAGE_ACCESS_TOKEN")
 VERIFY_TOKEN = os.getenv("VERIFY_TOKEN")
 
 GRAPH_API_URL = "https://graph.facebook.com/v19.0" # Use a recent API version
+
+# Load the model once at startup
+model = fasttext.load_model("lid.176.bin")
 
 # Function to send a text message (asynchronous)
 async def send_text_message(recipient_id: str, message_text: str):
@@ -36,28 +40,13 @@ async def send_text_message(recipient_id: str, message_text: str):
             logging.error(f"Response: {response.text}")
 
 def detect_language(text):
-    try:
-        lang = detect(text)
-        print(f"[DEBUG] langdetect result: {lang}")
-        # Custom check for Malagasy
-        malagasy_keywords = ["manao ahoana", "miarahaba", "azafady", "tsara", "eny", "tsia", "salama"]
-        if any(word in text.lower() for word in malagasy_keywords):
-            return "mg"
-        # Custom check for French
-        french_keywords = ["bonjour", "merci", "oui", "non", "ça va", "comment"]
-        if any(word in text.lower() for word in french_keywords):
-            return "fr"
-        return lang
-    except LangDetectException as e:
-        print(f"[DEBUG] Language detection error: {e}")
-        # Fallback: check for Malagasy or French keywords
-        malagasy_keywords = ["manao ahoana", "miarahaba", "azafady", "tsara", "eny", "tsia"]
-        french_keywords = ["bonjour", "merci", "oui", "non", "ça va", "comment"]
-        if any(word in text.lower() for word in malagasy_keywords):
-            return "mg"
-        if any(word in text.lower() for word in french_keywords):
-            return "fr"
-        return "unknown"
+    if not text or not text.strip():
+        return "unknown", 0.0
+    label, confidence = model.predict(text)
+    if not label or not confidence:
+        return "unknown", 0.0
+    lang_code = label[0].replace("__label__", "")
+    return lang_code, confidence[0]
 
 # Webhook Verification Endpoint
 @app.get("/webhook")
@@ -101,20 +90,28 @@ async def handle_message(request: Request):
                     message_text = messaging_event["message"]["text"]
                     print(f"[DEBUG] Received message from {sender_id}: {message_text}")
 
-                    # --- Improved language detection and response ---
-                    lang = detect_language(message_text)
+                    # --- Check for empty or whitespace message ---
+                    if not message_text or not message_text.strip():
+                        print(f"[DEBUG] Empty or whitespace message received from {sender_id}")
+                        reply = "Sorry, I couldn't detect your language."
+                        await send_text_message(sender_id, reply)
+                        return Response(content="OK", status_code=200)
 
-                    if lang == "fr":
+                    # --- fastText language detection and response ---
+                    lang_code, confidence = detect_language(message_text)
+                    print(f"[DEBUG] fastText detected: {lang_code} (confidence: {confidence:.2f})")
+
+                    if lang_code == "fr":
                         reply = "Bonjour! Je parle français."
-                    elif lang == "mg":
+                    elif lang_code == "mg":
                         reply = "Miarahaba! Mahay miteny malagasy aho."
-                    elif lang == "en":
+                    elif lang_code == "en":
                         reply = "Hello! I speak English."
                     else:
                         reply = "Sorry, I couldn't detect your language."
 
                     await send_text_message(sender_id, reply)
-                    # --- End improved language detection and response ---
+                    # --- End fastText language detection and response ---
 
                 # Handle postback from buttons/persistent menu
                 elif "postback" in messaging_event:
