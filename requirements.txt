@@ -4,3 +4,4 @@ requests
 python-dotenv
 langdetect
 fasttext==0.9.2
+numpy==1.23.5

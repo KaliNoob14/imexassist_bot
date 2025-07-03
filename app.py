@@ -40,13 +40,14 @@ async def send_text_message(recipient_id: str, message_text: str):
             logging.error(f"Response: {response.text}")
 
 def detect_language(text):
-    if not text or not text.strip():
-        return "unknown", 0.0
-    label, confidence = model.predict(text)
-    if not label or not confidence:
-        return "unknown", 0.0
-    lang_code = label[0].replace("__label__", "")
-    return lang_code, confidence[0]
+    try:
+        labels, confidences = model.predict(text)
+        label = labels[0] if labels else None
+        confidence = confidences[0] if len(confidences) > 0 else None
+        return label, confidence
+    except Exception as e:
+        logging.error(f"Language detection failed: {e}", exc_info=True)
+        return None, None
 
 # Webhook Verification Endpoint
 @app.get("/webhook")
