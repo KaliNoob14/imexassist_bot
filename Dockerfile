@@ -13,8 +13,10 @@ RUN apt-get update && apt-get install -y build-essential curl
 # Download the fastText language identification model
 RUN curl -O https://dl.fbaipublicfiles.com/fasttext/supervised-models/lid.176.bin
 
-# Install any needed packages specified in requirements.txt
-RUN pip install --no-cache-dir -r requirements.txt
+# Install Python dependencies
+RUN pip install --upgrade pip \
+    && pip install --no-cache-dir -r requirements.txt \
+    && pip install --no-cache-dir lingua-language-detector>=2.1.1
 
 # Copy the rest of your application code and the fastText model into the container
 COPY . .

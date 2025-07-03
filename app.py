@@ -6,6 +6,7 @@ import requests
 import logging
 from langdetect import detect, LangDetectException
 import fasttext
+from language_nn import detect_language
 
 load_dotenv() # Load environment variables from .env during local dev
 
@@ -38,16 +39,6 @@ async def send_text_message(recipient_id: str, message_text: str):
         logging.error(f"Error sending message to {recipient_id}: {e}")
         if response is not None:
             logging.error(f"Response: {response.text}")
-
-def detect_language(text):
-    try:
-        labels, confidences = model.predict(text)
-        label = labels[0] if labels else None
-        confidence = confidences[0] if len(confidences) > 0 else None
-        return label, confidence
-    except Exception as e:
-        logging.error(f"Language detection failed: {e}", exc_info=True)
-        return None, None
 
 # Webhook Verification Endpoint
 @app.get("/webhook")
