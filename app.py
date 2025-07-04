@@ -8,6 +8,7 @@ import time
 from langdetect import detect, LangDetectException
 import fasttext
 from language_nn import detect_language
+from intent_nn import predict_intent
 
 load_dotenv() # Load environment variables from .env during local dev
 
@@ -126,17 +127,19 @@ async def handle_message(request: Request):
                     lang_code, confidence = detect_language(message_text)
                     print(f"[DEBUG] fastText detected: {lang_code} (confidence: {confidence:.2f})")
 
-                    if lang_code == "fr":
-                        reply = "Bonjour! Je parle français. Comment puis-je vous aider?"
-                    elif lang_code == "mg":
-                        reply = "Miarahaba! Mahay miteny malagasy aho. Ahoana no azoko manampy anao?"
-                    elif lang_code == "en":
-                        reply = "Hello! I speak English. How can I help you?"
+                    # --- Intent detection ---
+                    intent, intent_conf = predict_intent(message_text)
+                    print(f"[DEBUG] Predicted intent: {intent} (confidence: {intent_conf:.2f})")
+
+                    # --- Intent-based response logic ---
+                    reply_lang = lang_code if lang_code in ["fr", "mg", "en"] else "en"
+                    if intent and intent_conf >= 0.5 and intent in INTENT_RESPONSES:
+                        reply = INTENT_RESPONSES[intent][reply_lang]
                     else:
-                        reply = "Sorry, I couldn't detect your language. Please try again."
+                        reply = DEFAULT_RESPONSES[reply_lang]
 
                     await send_text_message(sender_id, reply)
-                    # --- End fastText language detection and response ---
+                    # --- End intent-based response logic ---
 
                 # Handle postback from buttons/persistent menu
                 elif "postback" in messaging_event:
@@ -150,6 +153,45 @@ async def handle_message(request: Request):
 async def root():
     logging.info("Root endpoint hit!")
     return {"message": "Hello, I'm IMEX Assist, how may I help you?"}
+
+# Intent to response mapping
+INTENT_RESPONSES = {
+    "pricing": {
+        "fr": "Nos tarifs varient selon le service. Pourriez-vous préciser votre demande?",
+        "mg": "Miovaova arakaraka ny tolotra ny vidiny. Azafady hazavao ny fangatahanao.",
+        "en": "Our prices vary by service. Could you specify your request?"
+    },
+    "shipping": {
+        "fr": "La livraison dépend de votre emplacement et du service choisi.",
+        "mg": "Miankina amin'ny toerana sy ny tolotra no fandefasana.",
+        "en": "Shipping depends on your location and the chosen service."
+    },
+    "opening_hours": {
+        "fr": "Nos horaires d'ouverture sont de 8h à 17h, du lundi au vendredi.",
+        "mg": "Misokatra 8 ora maraina ka hatramin'ny 5 ora hariva izahay, alatsinainy ka hatramin'ny zoma.",
+        "en": "We are open from 8am to 5pm, Monday to Friday."
+    },
+    "contact": {
+        "fr": "Vous pouvez nous contacter au 034 12 345 67 ou par email à info@imex.com.",
+        "mg": "Afaka miantso anay amin'ny 034 12 345 67 na manoratra amin'ny info@imex.com ianao.",
+        "en": "You can contact us at 034 12 345 67 or by email at info@imex.com."
+    },
+    "location": {
+        "fr": "Notre bureau se trouve à Antananarivo, Lot II F 23.",
+        "mg": "Any Antananarivo, Lot II F 23 ny biraonay.",
+        "en": "Our office is in Antananarivo, Lot II F 23."
+    },
+    "product_info": {
+        "fr": "Nous proposons divers produits et services. Voulez-vous plus de détails?",
+        "mg": "Manolotra vokatra sy tolotra maro izahay. Mila fanazavana fanampiny ve ianao?",
+        "en": "We offer various products and services. Would you like more details?"
+    }
+}
+DEFAULT_RESPONSES = {
+    "fr": "Je n'ai pas compris votre demande. Pouvez-vous préciser?",
+    "mg": "Tsy azoko tsara ny fangatahanao. Azafady hazavao.",
+    "en": "I didn't understand your request. Could you clarify?"
+}
 
 if __name__ == "__main__":
     import uvicorn
