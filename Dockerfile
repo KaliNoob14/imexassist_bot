@@ -21,6 +21,9 @@ RUN pip install --upgrade pip \
 # Copy the rest of your application code and the fastText model into the container
 COPY . .
 
+# Copy the intent model and vectorizer into the container
+COPY intent_model.h5 intent_vectorizer.pkl /app/
+
 # Cloud Run expects the application to listen on the port specified by the PORT environment variable
 ENV PORT 8080
 
