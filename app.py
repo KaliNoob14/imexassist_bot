@@ -4,6 +4,7 @@ from dotenv import load_dotenv
 import os
 import requests
 import logging
+import time
 from langdetect import detect, LangDetectException
 import fasttext
 from language_nn import detect_language
@@ -17,11 +18,28 @@ app = FastAPI()
 # Retrieve these from environment variables set during Cloud Run deployment
 PAGE_ACCESS_TOKEN = os.getenv("PAGE_ACCESS_TOKEN")
 VERIFY_TOKEN = os.getenv("VERIFY_TOKEN")
+PAGE_ID = os.getenv("PAGE_ID")  # Add PAGE_ID to environment variables
 
 GRAPH_API_URL = "https://graph.facebook.com/v19.0" # Use a recent API version
 
 # Load the model once at startup
 model = fasttext.load_model("lid.176.bin")
+
+# Simple rate limiting - track recent messages per user
+recent_messages = {}
+
+def is_rate_limited(sender_id: str, message_text: str, cooldown_seconds: int = 3) -> bool:
+    """Check if user is sending messages too quickly"""
+    current_time = time.time()
+    key = f"{sender_id}:{message_text.strip().lower()}"
+    
+    if key in recent_messages:
+        time_diff = current_time - recent_messages[key]
+        if time_diff < cooldown_seconds:
+            return True
+    
+    recent_messages[key] = current_time
+    return False
 
 # Function to send a text message (asynchronous)
 async def send_text_message(recipient_id: str, message_text: str):
@@ -76,6 +94,16 @@ async def handle_message(request: Request):
         for entry in data.get("entry", []):
             for messaging_event in entry.get("messaging", []):
                 sender_id = messaging_event["sender"]["id"]
+                
+                # Skip if message is from the page itself (prevents infinite loop)
+                if sender_id == PAGE_ID:
+                    print(f"[DEBUG] Skipping message from page itself: {sender_id}")
+                    continue
+
+                # Skip delivery receipts, read receipts, and other non-message events
+                if "delivery" in messaging_event or "read" in messaging_event:
+                    print(f"[DEBUG] Skipping delivery/read receipt from {sender_id}")
+                    continue
 
                 # Handle text messages
                 if "message" in messaging_event and "text" in messaging_event["message"]:
@@ -87,20 +115,25 @@ async def handle_message(request: Request):
                         print(f"[DEBUG] Empty or whitespace message received from {sender_id}")
                         reply = "Sorry, I couldn't detect your language."
                         await send_text_message(sender_id, reply)
-                        return Response(content="OK", status_code=200)
+                        continue
+
+                    # --- Rate limiting check ---
+                    if is_rate_limited(sender_id, message_text):
+                        print(f"[DEBUG] Rate limited message from {sender_id}: {message_text}")
+                        continue
 
                     # --- fastText language detection and response ---
                     lang_code, confidence = detect_language(message_text)
                     print(f"[DEBUG] fastText detected: {lang_code} (confidence: {confidence:.2f})")
 
                     if lang_code == "fr":
-                        reply = "Bonjour! Je parle français."
+                        reply = "Bonjour! Je parle français. Comment puis-je vous aider?"
                     elif lang_code == "mg":
-                        reply = "Miarahaba! Mahay miteny malagasy aho."
+                        reply = "Miarahaba! Mahay miteny malagasy aho. Ahoana no azoko manampy anao?"
                     elif lang_code == "en":
-                        reply = "Hello! I speak English."
+                        reply = "Hello! I speak English. How can I help you?"
                     else:
-                        reply = "Sorry, I couldn't detect your language."
+                        reply = "Sorry, I couldn't detect your language. Please try again."
 
                     await send_text_message(sender_id, reply)
                     # --- End fastText language detection and response ---
