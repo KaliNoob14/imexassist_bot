@@ -10,20 +10,15 @@ COPY requirements.txt .
 # Install build tools and dependencies for numpy/scipy
 RUN apt-get update && apt-get install -y build-essential curl gfortran libopenblas-dev liblapack-dev
 
-# Download the fastText language identification model
-RUN curl -O https://dl.fbaipublicfiles.com/fasttext/supervised-models/lid.176.bin
-
 # Install Python dependencies
 RUN pip install --upgrade pip \
-    && pip install --no-cache-dir -r requirements.txt \
-    && pip install --no-cache-dir lingua-language-detector>=2.1.1 \
-    && python -c "import numpy; print('Numpy version:', numpy.__version__); import numpy._core"
+    && pip install --no-cache-dir -r requirements.txt
 
-# Copy the rest of your application code and the fastText model into the container
+# Copy the rest of your application code into the container
 COPY . .
 
-# Copy the intent model and vectorizer into the container
-COPY intent_model.pt intent_vectorizer.pkl /app/
+# Copy the intent model, embedding model name, and label encoder into the container
+COPY intent_model.pt intent_embedding_model.txt intent_label_encoder.pkl /app/
 
 # Cloud Run expects the application to listen on the port specified by the PORT environment variable
 ENV PORT 8080
