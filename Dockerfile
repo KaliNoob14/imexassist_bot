@@ -22,7 +22,7 @@ RUN pip install --upgrade pip \
 COPY . .
 
 # Copy the intent model and vectorizer into the container
-COPY intent_model.h5 intent_vectorizer.pkl /app/
+COPY intent_model.pt intent_vectorizer.pkl /app/
 
 # Cloud Run expects the application to listen on the port specified by the PORT environment variable
 ENV PORT 8080
