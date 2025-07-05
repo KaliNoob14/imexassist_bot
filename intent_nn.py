@@ -39,8 +39,9 @@ try:
     intent_model = IntentNet(input_dim, num_classes)
     intent_model.load_state_dict(torch.load(MODEL_PATH, map_location=torch.device('cpu')))
     intent_model.eval()
+    logging.info(f"Successfully loaded intent model from {MODEL_PATH} and vectorizer/label encoder from {VECTORIZER_PATH}")
 except Exception as e:
-    logging.error(f"Failed to load intent model/vectorizer/label encoder: {e}")
+    logging.error(f"Failed to load intent model/vectorizer/label encoder: {e}", exc_info=True)
 
 def predict_intent(text, threshold=0.5):
     """
