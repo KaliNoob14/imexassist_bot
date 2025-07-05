@@ -15,7 +15,6 @@ RUN curl -O https://dl.fbaipublicfiles.com/fasttext/supervised-models/lid.176.bi
 
 # Install Python dependencies
 RUN pip install --upgrade pip \
-    && pip install numpy==1.23.5 \
     && pip install --no-cache-dir -r requirements.txt \
     && pip install --no-cache-dir lingua-language-detector>=2.1.1 \
     && python -c "import numpy; print('Numpy version:', numpy.__version__); import numpy._core"
