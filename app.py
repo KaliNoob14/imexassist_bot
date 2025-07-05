@@ -6,7 +6,6 @@ import requests
 import logging
 import time
 from langdetect import detect, LangDetectException
-import fasttext
 from language_nn import detect_language
 from intent_nn import predict_intent
 
@@ -22,9 +21,6 @@ VERIFY_TOKEN = os.getenv("VERIFY_TOKEN")
 PAGE_ID = os.getenv("PAGE_ID")  # Add PAGE_ID to environment variables
 
 GRAPH_API_URL = "https://graph.facebook.com/v19.0" # Use a recent API version
-
-# Load the model once at startup
-model = fasttext.load_model("lid.176.bin")
 
 # Simple rate limiting - track recent messages per user
 recent_messages = {}
