@@ -7,15 +7,15 @@ WORKDIR /app
 # Copy the requirements file into the container
 COPY requirements.txt .
 
-# Install build tools, system numpy, and other native extensions
-RUN apt-get update && apt-get install -y build-essential curl python3-numpy
+# Install build tools and dependencies for numpy/scipy
+RUN apt-get update && apt-get install -y build-essential curl gfortran libopenblas-dev liblapack-dev
 
 # Download the fastText language identification model
 RUN curl -O https://dl.fbaipublicfiles.com/fasttext/supervised-models/lid.176.bin
 
 # Install Python dependencies
 RUN pip install --upgrade pip \
-    && pip install --force-reinstall numpy==1.23.5 \
+    && pip install numpy==1.23.5 \
     && pip install --no-cache-dir -r requirements.txt \
     && pip install --no-cache-dir lingua-language-detector>=2.1.1 \
     && python -c "import numpy; print('Numpy version:', numpy.__version__); import numpy._core"
