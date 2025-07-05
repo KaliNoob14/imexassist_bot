@@ -1,69 +1,60 @@
-import fasttext
 import logging
+from transformers import AutoTokenizer, AutoModelForSequenceClassification
+import torch
 from lingua import Language, LanguageDetectorBuilder
 
-# Load the fastText model once at import time
-MODEL_PATH = "lid.176.bin"
+# Load the transformer-based language detection model
+MODEL_NAME = "papluca/xlm-roberta-base-language-detection"
 try:
-    model = fasttext.load_model(MODEL_PATH)
+    tokenizer = AutoTokenizer.from_pretrained(MODEL_NAME)
+    model = AutoModelForSequenceClassification.from_pretrained(MODEL_NAME)
+    model.eval()
 except Exception as e:
-    logging.error(f"Failed to load fastText model from {MODEL_PATH}: {e}")
+    logging.error(f"Failed to load transformer language detection model: {e}")
+    tokenizer = None
     model = None
+
+SUPPORTED_LANGS = {"en", "fr"}
+DEFAULT_CONFIDENCE_THRESHOLD = 0.5
+
+LABEL_TO_LANG = {
+    0: "af", 1: "am", 2: "ar", 3: "as", 4: "az", 5: "be", 6: "bg", 7: "bn", 8: "bo", 9: "bs", 10: "ca", 11: "cs", 12: "cy", 13: "da", 14: "de", 15: "dv", 16: "el", 17: "en", 18: "es", 19: "et", 20: "eu", 21: "fa", 22: "fi", 23: "fo", 24: "fr", 25: "ga", 26: "gl", 27: "gu", 28: "he", 29: "hi", 30: "hr", 31: "hu", 32: "hy", 33: "id", 34: "is", 35: "it", 36: "ja", 37: "jv", 38: "ka", 39: "kk", 40: "km", 41: "kn", 42: "ko", 43: "ku", 44: "ky", 45: "la", 46: "lb", 47: "lo", 48: "lt", 49: "lv", 50: "mg", 51: "mk", 52: "ml", 53: "mn", 54: "mr", 55: "ms", 56: "mt", 57: "ne", 58: "nl", 59: "no", 60: "oc", 61: "or", 62: "pa", 63: "pl", 64: "ps", 65: "pt", 66: "qu", 67: "rm", 68: "ro", 69: "ru", 70: "rw", 71: "se", 72: "si", 73: "sk", 74: "sl", 75: "so", 76: "sq", 77: "sr", 78: "sv", 79: "sw", 80: "ta", 81: "te", 82: "tg", 83: "th", 84: "tk", 85: "tl", 86: "tn", 87: "tr", 88: "tt", 89: "ug", 90: "uk", 91: "ur", 92: "uz", 93: "vi", 94: "vo", 95: "wa", 96: "xh", 97: "yi", 98: "yo", 99: "zh"
+}
 
 # Lingua setup: only support English, French
 LINGUA_LANGS = [Language.ENGLISH, Language.FRENCH]
 lingua_detector = LanguageDetectorBuilder.from_languages(*LINGUA_LANGS).build()
 
-DEFAULT_CONFIDENCE_THRESHOLD = 0.5
-
-LANG_LABELS = {
-    "__label__en": "en",
-    "__label__fr": "fr",
-    "__label__mg": "mg",
-}
-
-ISO_TO_LABEL = {
-    "en": "__label__en",
-    "fr": "__label__fr",
-    "mg": "__label__mg",
-}
-
 def detect_language(text, threshold=DEFAULT_CONFIDENCE_THRESHOLD):
     """
-    Detect the language of the given text using fastText and Lingua.
-    Returns (lang_code, combined_confidence).
+    Detect the language of the given text using a transformer model, fallback to Lingua.
+    Returns (lang_code, confidence).
+    Only supports English and French for now.
     """
     if not text or not text.strip():
         return None, 0.0
-    # Try fastText first
-    ft_lang, ft_conf = None, 0.0
-    if model:
+    # Try transformer model first
+    if model and tokenizer:
         try:
-            labels, confidences = model.predict(text)
-            if labels and confidences:
-                ft_label = labels[0]
-                ft_conf = confidences[0]
-                ft_lang = LANG_LABELS.get(ft_label, None)
+            inputs = tokenizer(text, return_tensors="pt", truncation=True, max_length=128)
+            with torch.no_grad():
+                outputs = model(**inputs)
+                probs = torch.softmax(outputs.logits, dim=1)[0]
+                top_idx = int(torch.argmax(probs))
+                lang = LABEL_TO_LANG.get(top_idx, None)
+                confidence = float(probs[top_idx])
+                if lang in SUPPORTED_LANGS and confidence >= threshold:
+                    return lang, confidence
         except Exception as e:
-            logging.error(f"fastText detection failed: {e}", exc_info=True)
-    # If fastText is confident enough, return
-    if ft_lang and ft_conf >= threshold:
-        return ft_lang, ft_conf
+            logging.error(f"Transformer language detection failed: {e}", exc_info=True)
     # Fallback to Lingua
     try:
-        lingua_confidences = lingua_detector.compute_language_confidence_values(text)
-        lingua_scores = {c.language.iso_code_639_1.name.lower(): c.value for c in lingua_confidences}
-        # Only consider supported languages
-        lingua_scores = {k: v for k, v in lingua_scores.items() if k in ISO_TO_LABEL}
-        if not lingua_scores:
-            return None, 0.0
-        # Combine fastText and Lingua probabilities if both available
-        if ft_lang in lingua_scores:
-            combined_score = (ft_conf + lingua_scores[ft_lang]) / 2
-            return ft_lang, combined_score
-        # Otherwise, pick the top Lingua result
-        lingua_lang, lingua_conf = max(lingua_scores.items(), key=lambda x: x[1])
-        return lingua_lang, lingua_conf
+        lingua_lang = lingua_detector.detect_language_of(text)
+        if lingua_lang:
+            lingua_code = lingua_lang.iso_code_639_1.name.lower()
+            if lingua_code in SUPPORTED_LANGS:
+                # Lingua does not provide a confidence, so use 0.5 as a default
+                return lingua_code, 0.5
     except Exception as e:
         logging.error(f"Lingua detection failed: {e}", exc_info=True)
-        return ft_lang, ft_conf if ft_lang else (None, 0.0) 
+    return None, 0.0 
