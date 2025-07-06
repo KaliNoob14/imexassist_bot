@@ -14,6 +14,11 @@ RUN apt-get update && apt-get install -y build-essential curl gfortran libopenbl
 RUN pip install --upgrade pip \
     && pip install --no-cache-dir -r requirements.txt
 
+# Pre-download Hugging Face model and tokenizer for offline use
+RUN python -c "from transformers import AutoTokenizer, AutoModelForSequenceClassification; \
+    AutoTokenizer.from_pretrained('papluca/xlm-roberta-base-language-detection'); \
+    AutoModelForSequenceClassification.from_pretrained('papluca/xlm-roberta-base-language-detection')"
+
 # Copy the rest of your application code into the container
 COPY . .
 
@@ -22,6 +27,9 @@ COPY intent_model.pt intent_embedding_model.txt intent_label_encoder.pkl /app/
 
 # Cloud Run expects the application to listen on the port specified by the PORT environment variable
 ENV PORT 8080
+
+# Set Hugging Face Transformers to offline mode
+ENV TRANSFORMERS_OFFLINE=1
 
 # Command to run the application using Uvicorn
 # It assumes your FastAPI app instance is named 'app' in 'app.py'
