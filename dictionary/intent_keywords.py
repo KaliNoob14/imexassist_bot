@@ -7,6 +7,14 @@ INTENT_KEYWORDS = {
         # Malagasy
         "manao ahoana", "salama", "arahaba", "manahoana"
     ],
+    "thanks": [
+        # French
+        "merci", "merci beaucoup", "merci bien", "okay merci", "ok merci", "d'accord merci", "merci infiniment",
+        # English
+        "thank you", "thanks", "thank you very much", "okay thanks", "ok thanks", "thanks a lot", "thank you so much",
+        # Malagasy
+        "misaotra", "misaotra indrindra", "okay misaotra", "misaotra betsaka"
+    ],
     "pricing": [
         # English
         "price", "cost", "rate", "tariff", "how much", "fee", "charge", "pricing", "per kilogram", "per kg",

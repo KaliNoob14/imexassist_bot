@@ -194,6 +194,11 @@ INTENT_RESPONSES = {
         "fr": "Bonjour ! Nous sommes là pour vous aider. Comment pouvons-nous vous assister aujourd'hui ?",
         "mg": "Salama! Eto izahay hanampy anao. Inona no azontsika atao ho anao androany?"
     },
+    "thanks": {
+        "fr": "Nous vous remercions pour votre confiance. N'hésitez pas à nous recontacter si vous avez d'autres questions !",
+        "en": "Thank you for your trust. Don't hesitate to contact us again if you have any other questions!",
+        "mg": "Misaotra amin'ny fahatokisanao anay. Aza misalasala raha manana fanontaniana hafa ianao!"
+    },
     "pricing": {
         "en": "For pricing, please discuss with our sales team.",
         "fr": "Concernant les tarifs, il faut discuter avec l'équipe commerciale monsieur/madame",
