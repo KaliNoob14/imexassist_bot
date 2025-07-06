@@ -126,21 +126,7 @@ async def handle_message(request: Request):
 
                     # --- Check if this is an admin correction ---
                     if sender_id in ADMIN_SENDER_IDS:
-                        # Check if admin is in correction flow
-                        current_state = admin_correction_state.get(sender_id, "normal")
-                        
-                        if current_state == "waiting_for_answer":
-                            # Admin provided the correct answer, now show intent menu
-                            admin_last_customer_message[sender_id] = message_text
-                            admin_correction_state[sender_id] = "waiting_for_intent"
-                            await send_intent_selection_menu(sender_id)
-                            continue
-                            
-                        elif current_state == "waiting_for_intent":
-                            # This shouldn't happen, but reset if it does
-                            admin_correction_state[sender_id] = "normal"
-                            
-                        # Check for correction triggers
+                        # Check for correction triggers first
                         if message_text.lower().strip() in CORRECTION_TRIGGERS:
                             admin_correction_state[sender_id] = "waiting_for_answer"
                             reply = "Teach me the correct answer for the last customer message:"
@@ -155,12 +141,25 @@ async def handle_message(request: Request):
                             await send_text_message(sender_id, reply)
                             admin_correction_state[sender_id] = "normal"
                             continue
-                        else:
-                            # Regular admin message - store for potential correction
+                            
+                        # Check if admin is in correction flow
+                        current_state = admin_correction_state.get(sender_id, "normal")
+                        
+                        if current_state == "waiting_for_answer":
+                            # Admin provided the correct answer, now show intent menu
                             admin_last_customer_message[sender_id] = message_text
-                            reply = "Message stored. Say 'wrong answer' to correct the bot's response, or use the menu."
-                            await send_text_message(sender_id, reply)
+                            admin_correction_state[sender_id] = "waiting_for_intent"
+                            await send_intent_selection_menu(sender_id)
                             continue
+                            
+                        elif current_state == "waiting_for_intent":
+                            # This shouldn't happen, but reset if it does
+                            admin_correction_state[sender_id] = "normal"
+                            
+                        # If not in correction mode, process as normal message
+                        # Store the message for potential future correction
+                        admin_last_customer_message[sender_id] = message_text
+                        # Continue to normal message processing (no admin response)
 
                     # --- Rate limiting check ---
                     if is_rate_limited(sender_id, message_text):
