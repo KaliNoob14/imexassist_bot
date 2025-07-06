@@ -4,10 +4,12 @@ import logging
 import torch
 import torch.nn as nn
 import numpy as np
+from sentence_transformers import SentenceTransformer
 
-# Paths to model and vectorizer files
+# Paths to model and embedding/label encoder files
 MODEL_PATH = os.path.join(os.path.dirname(__file__), 'intent_model.pt')
-VECTORIZER_PATH = os.path.join(os.path.dirname(__file__), 'intent_vectorizer.pkl')
+EMBEDDING_MODEL_FILE = os.path.join(os.path.dirname(__file__), 'intent_embedding_model.txt')
+LABEL_ENCODER_FILE = os.path.join(os.path.dirname(__file__), 'intent_label_encoder.pkl')
 
 # Define the model architecture (must match training)
 class IntentNet(nn.Module):
@@ -28,34 +30,37 @@ class IntentNet(nn.Module):
         return x
 
 intent_model = None
-vectorizer = None
+embedder = None
 label_encoder = None
 
 try:
-    with open(VECTORIZER_PATH, 'rb') as f:
-        vectorizer, label_encoder = pickle.load(f)
-    input_dim = vectorizer.transform(["test"]).shape[1]
+    with open(EMBEDDING_MODEL_FILE, 'r') as f:
+        embedding_model_name = f.read().strip()
+    embedder = SentenceTransformer(embedding_model_name)
+    with open(LABEL_ENCODER_FILE, 'rb') as f:
+        label_encoder = pickle.load(f)
+    input_dim = embedder.get_sentence_embedding_dimension()
     num_classes = len(label_encoder.classes_)
     intent_model = IntentNet(input_dim, num_classes)
     intent_model.load_state_dict(torch.load(MODEL_PATH, map_location=torch.device('cpu')))
     intent_model.eval()
-    logging.info(f"Successfully loaded intent model from {MODEL_PATH} and vectorizer/label encoder from {VECTORIZER_PATH}")
+    logging.info(f"Successfully loaded intent model from {MODEL_PATH}, embedder {embedding_model_name}, and label encoder from {LABEL_ENCODER_FILE}")
 except Exception as e:
-    logging.error(f"Failed to load intent model/vectorizer/label encoder: {e}", exc_info=True)
+    logging.error(f"Failed to load intent model/embedder/label encoder: {e}", exc_info=True)
 
 def predict_intent(text, threshold=0.5):
     """
     Predict the intent of the given text. Returns (intent, confidence).
-    Returns (None, 0.0) if model/vectorizer/label_encoder is not loaded or confidence is too low.
+    Returns (None, 0.0) if model/embedder/label_encoder is not loaded or confidence is too low.
     """
-    if not intent_model or not vectorizer or not label_encoder:
-        logging.error("Intent model, vectorizer, or label encoder not loaded.")
+    if not intent_model or not embedder or not label_encoder:
+        logging.error("Intent model, embedder, or label encoder not loaded.")
         return None, 0.0
     if not text or not text.strip():
         return None, 0.0
     try:
-        X = vectorizer.transform([text])
-        X_tensor = torch.tensor(X.toarray(), dtype=torch.float32)
+        X = embedder.encode([text])
+        X_tensor = torch.tensor(X, dtype=torch.float32)
         with torch.no_grad():
             logits = intent_model(X_tensor)
             probs = torch.softmax(logits, dim=1).cpu().numpy()[0]
