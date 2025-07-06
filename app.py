@@ -7,6 +7,7 @@ import logging
 import time
 from language_nn import detect_language
 from intent_nn import predict_intent
+from dictionary.intent_keywords import INTENT_KEYWORDS
 
 load_dotenv() # Load environment variables from .env during local dev
 
@@ -128,11 +129,48 @@ async def handle_message(request: Request):
 
                     # --- Intent-based response logic ---
                     reply_lang = lang_code if lang_code in ["fr", "mg", "en"] else "en"
-                    if intent and intent_conf >= 0.5 and intent in INTENT_RESPONSES:
-                        reply = INTENT_RESPONSES[intent][reply_lang]
-                    else:
-                        reply = DEFAULT_RESPONSES[reply_lang]
 
+                    # Special case: exact 'Bonsoir' message
+                    if message_text.strip().lower() == "bonsoir":
+                        reply = "Bonsoir ! Nous sommes là pour vous aider. Comment pouvons-nous vous assister aujourd'hui ?"
+                    else:
+                        # 1. Use neural network intent if confident
+                        if intent and intent_conf >= 0.5 and intent in INTENT_RESPONSES:
+                            if intent == "pricing":
+                                location = extract_location(message_text)
+                                if location == "china":
+                                    reply = PRICING_CONTACTS["china"][reply_lang]
+                                elif location == "indonesia":
+                                    reply = PRICING_CONTACTS["indonesia"][reply_lang]
+                                elif location in {"thailand", "canada", "france", "uae"}:
+                                    reply = PRICING_CONTACTS["other"][reply_lang]
+                                else:
+                                    reply = INTENT_RESPONSES["pricing"][reply_lang]
+                            else:
+                                reply = INTENT_RESPONSES[intent][reply_lang]
+                        else:
+                            # 2. Fallback: keyword matching
+                            matched_intent = None
+                            text_lower = message_text.lower()
+                            for k_intent, keywords in INTENT_KEYWORDS.items():
+                                if any(kw in text_lower for kw in keywords):
+                                    matched_intent = k_intent
+                                    break
+                            if matched_intent:
+                                if matched_intent == "pricing":
+                                    location = extract_location(message_text)
+                                    if location == "china":
+                                        reply = PRICING_CONTACTS["china"][reply_lang]
+                                    elif location == "indonesia":
+                                        reply = PRICING_CONTACTS["indonesia"][reply_lang]
+                                    elif location in {"thailand", "canada", "france", "uae"}:
+                                        reply = PRICING_CONTACTS["other"][reply_lang]
+                                    else:
+                                        reply = INTENT_RESPONSES["pricing"][reply_lang]
+                                else:
+                                    reply = INTENT_RESPONSES[matched_intent][reply_lang]
+                            else:
+                                reply = DEFAULT_RESPONSES[reply_lang]
                     await send_text_message(sender_id, reply)
                     # --- End intent-based response logic ---
 
@@ -158,7 +196,7 @@ INTENT_RESPONSES = {
     },
     "pricing": {
         "en": "For pricing, please discuss with our sales team.",
-        "fr": "Concernant les tarifs, il faut discuter avec l'équipe commerciale madame",
+        "fr": "Concernant les tarifs, il faut discuter avec l'équipe commerciale monsieur/madame",
         "mg": "Momba ny vidiny, azafady mifandraisa amin'ny ekipan'ny varotra."
     },
     "shipping_duration": {
@@ -197,6 +235,69 @@ DEFAULT_RESPONSES = {
     "mg": "Tsy azoko tsara ny fangatahanao. Azafady hazavao.",
     "en": "I didn't understand your request. Could you clarify?"
 }
+
+# Location keywords for context extraction
+LOCATION_KEYWORDS = {
+    "china": ["chine", "china"],
+    "thailand": ["thaïlande", "thailand"],
+    "canada": ["canada"],
+    "france": ["france"],
+    "uae": ["uae", "emirats", "emirates", "dubai"],
+    "indonesia": ["indonésie", "indonesia"]
+}
+
+# Location-specific pricing contacts
+PRICING_CONTACTS = {
+    "china": {
+        "fr": (
+            "Concernant les tarifs, il faut discuter avec l'équipe commerciale madame/monsieur. "
+            "Voici leurs numéros de téléphone, WhatsApp et WeChat : Chine :\n"
+            "🇨🇳 Mme Hasina : 034 05 828 71\n"
+            "🇨🇳 Mme Malala : 034 05 828 72\n"
+            "🇨🇳 Mme Bodo : 034 05 828 73"
+        ),
+        "en": (
+            "For pricing, please contact our sales team. Here are their phone, WhatsApp, and WeChat numbers for China:\n"
+            "🇨🇳 Ms. Hasina: 034 05 828 71\n"
+            "🇨🇳 Ms. Malala: 034 05 828 72\n"
+            "🇨🇳 Ms. Bodo: 034 05 828 73"
+        ),
+        "mg": (
+            "Momba ny vidiny, azafady mifandraisa amin'ny ekipan'ny varotra. Ireto ny laharan'ny ekipanay any Chine:\n"
+            "🇨🇳 Mme Hasina : 034 05 828 71\n"
+            "🇨🇳 Mme Malala : 034 05 828 72\n"
+            "🇨🇳 Mme Bodo : 034 05 828 73"
+        )
+    },
+    "indonesia": {
+        "fr": "Concernant les tarifs, contactez Mme Natasy : 034 05 828 96 pour l'Indonésie.",
+        "en": "For pricing, please contact Ms. Natasy: 034 05 828 96 for Indonesia.",
+        "mg": "Momba ny vidiny, antsoy i Mme Natasy: 034 05 828 96 ho an'i Indonezia."
+    },
+    "other": {
+        "fr": (
+            "Concernant les tarifs, il faut discuter avec l'équipe commerciale madame/monsieur. "
+            "Voici leur numéro de téléphone, WhatsApp et WeChat :\n"
+            "Mme Annie : 034 05 828 87"
+        ),
+        "en": (
+            "For pricing, please contact our sales team. Here is their phone, WhatsApp, and WeChat number:\n"
+            "Ms. Annie: 034 05 828 87"
+        ),
+        "mg": (
+            "Momba ny vidiny, azafady mifandraisa amin'ny ekipan'ny varotra. Ireto ny laharan'ny ekipanay:\n"
+            "Mme Annie : 034 05 828 87"
+        )
+    }
+}
+
+# Function to extract location from message text
+def extract_location(message_text):
+    text = message_text.lower()
+    for loc, keywords in LOCATION_KEYWORDS.items():
+        if any(k in text for k in keywords):
+            return loc
+    return None
 
 if __name__ == "__main__":
     import uvicorn
