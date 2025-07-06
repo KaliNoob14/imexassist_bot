@@ -1,11 +1,27 @@
 INTENT_KEYWORDS = {
-    "pricing": [
-        # French
-        "prix", "tarif", "coût", "combien", "devis", "facture", "estimation", "montant", "payer", "paiement",
-        # Malagasy
-        "vidiny", "vola", "ohatrinona", "sarany", "fandoavana",
+    "greeting": [
         # English
-        "price", "cost", "quote", "how much", "payment", "invoice"
+        "hello", "hi", "hey", "good morning", "good afternoon", "good evening", "greetings",
+        # French
+        "bonjour", "salut", "coucou", "bonsoir", "bonne matinée", "bonne après-midi",
+        # Malagasy
+        "manao ahoana", "salama", "arahaba", "manahoana"
+    ],
+    "pricing": [
+        # English
+        "price", "cost", "rate", "tariff", "how much", "fee", "charge", "pricing", "per kilogram", "per kg",
+        # French
+        "prix", "tarif", "coût", "combien", "devis", "facture", "estimation", "montant", "payer", "paiement", "par kilogramme", "par kg",
+        # Malagasy
+        "vidiny", "vola", "ohatrinona", "sarany", "fandoavana"
+    ],
+    "shipping_duration": [
+        # English
+        "duration", "how long", "delivery time", "shipping time", "transit time", "approximate time", "how many days", "how many weeks",
+        # French
+        "durée", "combien de temps", "délai", "temps de livraison", "temps de transport", "délai de livraison", "délai de transport", "combien de jours", "combien de semaines",
+        # Malagasy
+        "hafiriana", "mandra-pahoviana", "fotoana", "faharetana", "mandritra ny fotoana"
     ],
     "shipping": [
         # French

@@ -151,10 +151,20 @@ async def root():
 
 # Intent to response mapping
 INTENT_RESPONSES = {
+    "greeting": {
+        "en": "Hello! We are here to help you. How can we assist you today?",
+        "fr": "Bonjour ! Nous sommes là pour vous aider. Comment pouvons-nous vous assister aujourd'hui ?",
+        "mg": "Salama! Eto izahay hanampy anao. Inona no azontsika atao ho anao androany?"
+    },
     "pricing": {
-        "fr": "Nos tarifs varient selon le service. Pourriez-vous préciser votre demande?",
-        "mg": "Miovaova arakaraka ny tolotra ny vidiny. Azafady hazavao ny fangatahanao.",
-        "en": "Our prices vary by service. Could you specify your request?"
+        "en": "For pricing, please discuss with our sales team.",
+        "fr": "Concernant les tarifs, il faut discuter avec l'équipe commerciale madame",
+        "mg": "Momba ny vidiny, azafady mifandraisa amin'ny ekipan'ny varotra."
+    },
+    "shipping_duration": {
+        "en": "Our sea delivery time is 45 to 60 days.",
+        "fr": "Notre délai de livraison maritime est de 45 à 60 jours.",
+        "mg": "Ny faharetan'ny fandefasana an-dranomasina dia 45 ka hatramin'ny 60 andro."
     },
     "shipping": {
         "fr": "La livraison dépend de votre emplacement et du service choisi.",
