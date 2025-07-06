@@ -5,7 +5,6 @@ import os
 import requests
 import logging
 import time
-from langdetect import detect, LangDetectException
 from language_nn import detect_language
 from intent_nn import predict_intent
 
