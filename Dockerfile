@@ -19,6 +19,9 @@ RUN python -c "from transformers import AutoTokenizer, AutoModelForSequenceClass
     AutoTokenizer.from_pretrained('papluca/xlm-roberta-base-language-detection'); \
     AutoModelForSequenceClassification.from_pretrained('papluca/xlm-roberta-base-language-detection')"
 
+# Pre-download sentence-transformers model for intent detection
+RUN python -c "from sentence_transformers import SentenceTransformer; SentenceTransformer('all-MiniLM-L6-v2')"
+
 # Copy the rest of your application code into the container
 COPY . .
 
