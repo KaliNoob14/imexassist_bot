@@ -1,5 +1,5 @@
 # app.py (Simplified for quick test)
-from fastapi import FastAPI, Request, Response
+from fastapi import FastAPI, Request, Response, HTTPException, Header
 from dotenv import load_dotenv
 import os
 import requests
@@ -8,6 +8,7 @@ import time
 from language_nn import detect_language
 from intent_nn import predict_intent
 from dictionary.intent_keywords import INTENT_KEYWORDS
+import json
 
 load_dotenv() # Load environment variables from .env during local dev
 
@@ -24,6 +25,15 @@ GRAPH_API_URL = "https://graph.facebook.com/v19.0" # Use a recent API version
 
 # Simple rate limiting - track recent messages per user
 recent_messages = {}
+
+CORRECTIONS_FILE = "corrections.jsonl"
+ADMIN_TOKEN = os.getenv("ADMIN_TOKEN", "supersecret")  # Set this in your env for security
+
+# Admin sender IDs who can correct the bot (add your Facebook user ID here)
+ADMIN_SENDER_IDS = [
+    "10073659842756382",  # Add your Facebook user ID here
+    # Add more admin IDs as needed
+]
 
 def is_rate_limited(sender_id: str, message_text: str, cooldown_seconds: int = 3) -> bool:
     """Check if user is sending messages too quickly"""
@@ -114,6 +124,44 @@ async def handle_message(request: Request):
                         await send_text_message(sender_id, reply)
                         continue
 
+                    # --- Check if this is an admin correction ---
+                    if sender_id in ADMIN_SENDER_IDS:
+                        # Check if admin is in correction flow
+                        current_state = admin_correction_state.get(sender_id, "normal")
+                        
+                        if current_state == "waiting_for_answer":
+                            # Admin provided the correct answer, now show intent menu
+                            admin_last_customer_message[sender_id] = message_text
+                            admin_correction_state[sender_id] = "waiting_for_intent"
+                            await send_intent_selection_menu(sender_id)
+                            continue
+                            
+                        elif current_state == "waiting_for_intent":
+                            # This shouldn't happen, but reset if it does
+                            admin_correction_state[sender_id] = "normal"
+                            
+                        # Check for correction triggers
+                        if message_text.lower().strip() in CORRECTION_TRIGGERS:
+                            admin_correction_state[sender_id] = "waiting_for_answer"
+                            reply = "Teach me the correct answer for the last customer message:"
+                            await send_text_message(sender_id, reply)
+                            continue
+                            
+                        # Check for manual correction command
+                        correction_data = parse_correction(message_text)
+                        if correction_data:
+                            success, message = apply_correction(correction_data, message_text)
+                            reply = f"✅ {message}" if success else f"❌ {message}"
+                            await send_text_message(sender_id, reply)
+                            admin_correction_state[sender_id] = "normal"
+                            continue
+                        else:
+                            # Regular admin message - store for potential correction
+                            admin_last_customer_message[sender_id] = message_text
+                            reply = "Message stored. Say 'wrong answer' to correct the bot's response, or use the menu."
+                            await send_text_message(sender_id, reply)
+                            continue
+
                     # --- Rate limiting check ---
                     if is_rate_limited(sender_id, message_text):
                         print(f"[DEBUG] Rate limited message from {sender_id}: {message_text}")
@@ -178,6 +226,129 @@ async def handle_message(request: Request):
                 elif "postback" in messaging_event:
                     payload = messaging_event["postback"]["payload"]
                     print(f"[DEBUG] Received postback from {sender_id}: {payload}")
+                    
+                    # Handle admin postbacks
+                    if sender_id in ADMIN_SENDER_IDS:
+                        if payload == "CORRECT_INTENT_MENU":
+                            # Ask if user wants single or multi-intent selection
+                            data = {
+                                "recipient": {"id": sender_id},
+                                "message": {
+                                    "text": "Choose correction mode:",
+                                    "quick_replies": [
+                                        {"content_type": "text", "title": "🎯 Single Intent", "payload": "SINGLE_INTENT"},
+                                        {"content_type": "text", "title": "🎯🎯 Multiple Intents", "payload": "MULTI_INTENT"}
+                                    ]
+                                }
+                            }
+                            
+                            try:
+                                response = requests.post(
+                                    f"{GRAPH_API_URL}/me/messages",
+                                    params={"access_token": PAGE_ACCESS_TOKEN},
+                                    json=data
+                                )
+                                response.raise_for_status()
+                            except Exception as e:
+                                logging.error(f"Failed to send mode selection: {e}")
+                            continue
+                        elif payload == "VIEW_STATS":
+                            # Count corrections in the file
+                            try:
+                                with open(CORRECTIONS_FILE, "r", encoding="utf-8") as f:
+                                    correction_count = sum(1 for line in f)
+                                reply = f"📊 Bot Statistics:\n- Total corrections: {correction_count}\n- Active intents: {len(INTENT_RESPONSES)}"
+                            except FileNotFoundError:
+                                reply = "📊 Bot Statistics:\n- Total corrections: 0\n- Active intents: 0"
+                            await send_text_message(sender_id, reply)
+                            continue
+                        elif payload == "ADMIN_HELP":
+                            help_text = """🔧 Admin Commands:
+• Use the menu to correct intents
+• Type: CORRECT: intent=X, response=Y, keywords=Z
+• View stats and get help via menu"""
+                            await send_text_message(sender_id, help_text)
+                            continue
+                        elif payload.startswith("INTENT_"):
+                            # Handle intent selection
+                            selected_intent = payload.replace("INTENT_", "")
+                            last_message = admin_last_customer_message.get(sender_id, "No message stored")
+                            
+                            if selected_intent == "DONE":
+                                # Finalize multi-intent selection
+                                selected_intents = admin_selected_intents.get(sender_id, [])
+                                if not selected_intents:
+                                    reply = "❌ No intents selected. Please select at least one intent."
+                                    await send_text_message(sender_id, reply)
+                                    continue
+                                
+                                # Get the correct answer from the stored message
+                                correct_answer = last_message
+                                
+                                # Apply correction for each selected intent
+                                success_count = 0
+                                for intent in selected_intents:
+                                    correction_data = {
+                                        "intent": intent,
+                                        "response": correct_answer,
+                                        "lang": "fr"
+                                    }
+                                    success, _ = apply_correction(correction_data, last_message)
+                                    if success:
+                                        success_count += 1
+                                
+                                reply = f"✅ Applied correction to {success_count}/{len(selected_intents)} intents: {', '.join(selected_intents)}"
+                                await send_text_message(sender_id, reply)
+                                
+                                # Reset correction state
+                                admin_correction_state[sender_id] = "normal"
+                                admin_selected_intents[sender_id] = []
+                                continue
+                            
+                            # Check if we're in multi-select mode
+                            current_state = admin_correction_state.get(sender_id, "normal")
+                            
+                            if current_state == "selecting_intents":
+                                # Add to selected intents
+                                if sender_id not in admin_selected_intents:
+                                    admin_selected_intents[sender_id] = []
+                                
+                                if selected_intent not in admin_selected_intents[sender_id]:
+                                    admin_selected_intents[sender_id].append(selected_intent)
+                                    reply = f"✅ Added: {selected_intent}\nSelected: {', '.join(admin_selected_intents[sender_id])}\nClick ✅ Done when finished."
+                                else:
+                                    reply = f"⚠️ {selected_intent} already selected.\nSelected: {', '.join(admin_selected_intents[sender_id])}\nClick ✅ Done when finished."
+                                
+                                await send_text_message(sender_id, reply)
+                                continue
+                            
+                            # Single intent selection (original behavior)
+                            # Get the correct answer from the stored message
+                            correct_answer = last_message
+                            
+                            # Apply the correction
+                            correction_data = {
+                                "intent": selected_intent,
+                                "response": correct_answer,
+                                "lang": "fr"
+                            }
+                            success, message = apply_correction(correction_data, last_message)
+                            reply = f"✅ {message}" if success else f"❌ {message}"
+                            await send_text_message(sender_id, reply)
+                            
+                            # Reset correction state
+                            admin_correction_state[sender_id] = "normal"
+                            continue
+                        elif payload == "SINGLE_INTENT":
+                            await send_intent_selection_menu(sender_id, multi_select=False)
+                            continue
+                        elif payload == "MULTI_INTENT":
+                            admin_correction_state[sender_id] = "selecting_intents"
+                            admin_selected_intents[sender_id] = []
+                            await send_intent_selection_menu(sender_id, multi_select=True)
+                            continue
+                    
+                    # Handle regular postbacks
                     await send_text_message(sender_id, f"Received payload: {payload}")
     return Response(content="OK", status_code=200)
 
@@ -304,6 +475,223 @@ def extract_location(message_text):
             return loc
     return None
 
+def parse_correction(correction_text):
+    """
+    Parse admin correction message in format: 
+    "CORRECT: intent=X, response=Y, keywords=Z"
+    """
+    try:
+        if not correction_text.startswith("CORRECT:"):
+            return None
+        
+        # Extract the correction part after "CORRECT:"
+        correction_part = correction_text[8:].strip()
+        
+        # Parse key-value pairs
+        correction_data = {}
+        for item in correction_part.split(','):
+            item = item.strip()
+            if '=' in item:
+                key, value = item.split('=', 1)
+                correction_data[key.strip()] = value.strip()
+        
+        return correction_data
+    except Exception as e:
+        logging.error(f"Failed to parse correction: {e}")
+        return None
+
+def apply_correction(correction_data, original_message):
+    """
+    Apply correction to bot's memory and save for retraining
+    """
+    try:
+        intent = correction_data.get('intent')
+        response = correction_data.get('response')
+        keywords = correction_data.get('keywords', '').split('|') if correction_data.get('keywords') else []
+        lang = correction_data.get('lang', 'fr')
+        
+        if not (intent and response):
+            return False, "Missing intent or response in correction"
+        
+        # Update INTENT_RESPONSES in memory
+        if intent not in INTENT_RESPONSES:
+            INTENT_RESPONSES[intent] = {}
+        INTENT_RESPONSES[intent][lang] = response
+        
+        # Update INTENT_KEYWORDS in memory
+        if keywords:
+            if intent not in INTENT_KEYWORDS:
+                INTENT_KEYWORDS[intent] = []
+            for kw in keywords:
+                kw = kw.strip()
+                if kw and kw not in INTENT_KEYWORDS[intent]:
+                    INTENT_KEYWORDS[intent].append(kw)
+        
+        # Save correction for retraining
+        correction_entry = {
+            "customer_message": original_message,
+            "correct_intent": intent,
+            "correct_response": response,
+            "new_keywords": keywords,
+            "lang": lang,
+            "timestamp": time.time()
+        }
+        
+        with open(CORRECTIONS_FILE, "a", encoding="utf-8") as f:
+            f.write(json.dumps(correction_entry, ensure_ascii=False) + "\n")
+        
+        return True, f"Correction applied! Intent: {intent}, Response: {response[:50]}..."
+        
+    except Exception as e:
+        logging.error(f"Failed to apply correction: {e}")
+        return False, f"Error applying correction: {str(e)}"
+
+@app.post("/correction")
+async def correction_endpoint(
+    request: Request,
+    authorization: str = Header(None)
+):
+    # Simple admin token check
+    if authorization != f"Bearer {ADMIN_TOKEN}":
+        raise HTTPException(status_code=401, detail="Unauthorized")
+    data = await request.json()
+    customer_message = data.get("customer_message")
+    correct_intent = data.get("correct_intent")
+    correct_response = data.get("correct_response")
+    new_keywords = data.get("new_keywords", [])
+    lang = data.get("lang", "fr")  # Default to French if not specified
+    if not (customer_message and correct_intent and correct_response):
+        raise HTTPException(status_code=400, detail="Missing required fields.")
+    # Update INTENT_RESPONSES in memory
+    if correct_intent not in INTENT_RESPONSES:
+        INTENT_RESPONSES[correct_intent] = {}
+    INTENT_RESPONSES[correct_intent][lang] = correct_response
+    # Update INTENT_KEYWORDS in memory
+    if new_keywords:
+        if correct_intent not in INTENT_KEYWORDS:
+            INTENT_KEYWORDS[correct_intent] = []
+        for kw in new_keywords:
+            if kw not in INTENT_KEYWORDS[correct_intent]:
+                INTENT_KEYWORDS[correct_intent].append(kw)
+    # Save correction for retraining
+    correction_entry = {
+        "customer_message": customer_message,
+        "correct_intent": correct_intent,
+        "correct_response": correct_response,
+        "new_keywords": new_keywords,
+        "lang": lang
+    }
+    with open(CORRECTIONS_FILE, "a", encoding="utf-8") as f:
+        f.write(json.dumps(correction_entry, ensure_ascii=False) + "\n")
+    return {"status": "success", "message": "Correction applied and saved."}
+
+async def setup_persistent_menu():
+    """Set up persistent menu for admin corrections"""
+    menu_data = {
+        "persistent_menu": [
+            {
+                "locale": "default",
+                "composer_input_disabled": False,
+                "call_to_actions": [
+                    {
+                        "type": "postback",
+                        "title": "🔧 Correct Intent",
+                        "payload": "CORRECT_INTENT_MENU"
+                    },
+                    {
+                        "type": "postback", 
+                        "title": "📊 View Stats",
+                        "payload": "VIEW_STATS"
+                    },
+                    {
+                        "type": "postback",
+                        "title": "❓ Help",
+                        "payload": "ADMIN_HELP"
+                    }
+                ]
+            }
+        ]
+    }
+    
+    try:
+        response = requests.post(
+            f"{GRAPH_API_URL}/me/messenger_profile",
+            params={"access_token": PAGE_ACCESS_TOKEN},
+            json=menu_data
+        )
+        response.raise_for_status()
+        logging.info("Persistent menu set up successfully")
+    except Exception as e:
+        logging.error(f"Failed to set up persistent menu: {e}")
+
+async def send_intent_selection_menu(recipient_id, multi_select=False):
+    """Send a quick reply menu for intent selection"""
+    intent_options = [
+        {"content_type": "text", "title": "👋 Greeting", "payload": "INTENT_greeting"},
+        {"content_type": "text", "title": "💰 Pricing", "payload": "INTENT_pricing"},
+        {"content_type": "text", "title": "🚢 Shipping", "payload": "INTENT_shipping"},
+        {"content_type": "text", "title": "⏰ Duration", "payload": "INTENT_shipping_duration"},
+        {"content_type": "text", "title": "📞 Contact", "payload": "INTENT_contact"},
+        {"content_type": "text", "title": "📍 Location", "payload": "INTENT_location"},
+        {"content_type": "text", "title": "🛍️ Products", "payload": "INTENT_product_info"},
+        {"content_type": "text", "title": "🙏 Thanks", "payload": "INTENT_thanks"},
+        {"content_type": "text", "title": "🕐 Hours", "payload": "INTENT_opening_hours"}
+    ]
+    
+    if multi_select:
+        intent_options.append({"content_type": "text", "title": "✅ Done", "payload": "INTENT_DONE"})
+        message_text = "Select all relevant intents (click ✅ Done when finished):"
+    else:
+        message_text = "Select the correct intent for the last customer message:"
+    
+    data = {
+        "recipient": {"id": recipient_id},
+        "message": {
+            "text": message_text,
+            "quick_replies": intent_options
+        }
+    }
+    
+    try:
+        response = requests.post(
+            f"{GRAPH_API_URL}/me/messages",
+            params={"access_token": PAGE_ACCESS_TOKEN},
+            json=data
+        )
+        response.raise_for_status()
+    except Exception as e:
+        logging.error(f"Failed to send intent menu: {e}")
+
+# Store the last customer message for each admin user
+admin_last_customer_message = {}
+
+# Track admin correction state
+admin_correction_state = {}  # "waiting_for_answer" or "waiting_for_intent" or "selecting_intents"
+
+# Track selected intents for multi-intent mode
+admin_selected_intents = {}
+
+# Keywords that trigger correction mode
+CORRECTION_TRIGGERS = ["wrong", "wrong answer", "incorrect", "faux", "erreur", "pas correct"]
+
+def combine_responses(intents, lang="fr"):
+    """Combine responses from multiple intents"""
+    combined_parts = []
+    
+    for intent in intents:
+        if intent in INTENT_RESPONSES and lang in INTENT_RESPONSES[intent]:
+            combined_parts.append(INTENT_RESPONSES[intent][lang])
+    
+    if combined_parts:
+        return "\n\n".join(combined_parts)
+    else:
+        return "Response not found for selected intents."
+
 if __name__ == "__main__":
     import uvicorn
+    import asyncio
+    
+    # Set up persistent menu on startup
+    asyncio.run(setup_persistent_menu())
+    
     uvicorn.run("app:app", host="0.0.0.0", port=8080)
