@@ -94,7 +94,6 @@ async def verify_webhook(request: Request):
 @app.post("/webhook")
 async def handle_message(request: Request):
     data = await request.json()
-    print(f"[DEBUG] /webhook POST called")
     print(f"[DEBUG] Received webhook data: {data}")
 
     if data.get("object") == "page":
