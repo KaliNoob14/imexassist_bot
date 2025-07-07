@@ -117,49 +117,43 @@ async def handle_message(request: Request):
                     message_text = messaging_event["message"]["text"]
                     print(f"[DEBUG] Received message from {sender_id}: {message_text}")
 
-                    # --- Check for empty or whitespace message ---
-                    if not message_text or not message_text.strip():
-                        print(f"[DEBUG] Empty or whitespace message received from {sender_id}")
-                        reply = "Sorry, I couldn't detect your language."
-                        await send_text_message(sender_id, reply)
-                        continue
-
-                    # --- Check if this is an admin correction ---
+                    # --- ADMIN CORRECTION FLOW (handle before normal message processing) ---
                     if sender_id in ADMIN_SENDER_IDS:
-                        # Check for correction triggers first
+                        current_state = admin_correction_state.get(sender_id, "normal")
+                        # Correction step: waiting for correct answer
+                        if current_state == "waiting_for_answer":
+                            admin_last_customer_message[sender_id] = message_text
+                            admin_correction_state[sender_id] = "waiting_for_intent"
+                            await send_intent_selection_menu(sender_id)
+                            return Response(content="OK", status_code=200)
+                        # Correction step: waiting for intent selection (handled in postback)
+                        elif current_state in ("waiting_for_intent", "selecting_intents"):
+                            # Do nothing here, handled in postback
+                            return Response(content="OK", status_code=200)
+                        # Correction trigger
                         if message_text.lower().strip() in CORRECTION_TRIGGERS:
                             admin_correction_state[sender_id] = "waiting_for_answer"
                             reply = "Teach me the correct answer for the last customer message:"
                             await send_text_message(sender_id, reply)
-                            continue
-                            
-                        # Check for manual correction command
+                            return Response(content="OK", status_code=200)
+                        # Manual correction command
                         correction_data = parse_correction(message_text)
                         if correction_data:
                             success, message = apply_correction(correction_data, message_text)
                             reply = f"✅ {message}" if success else f"❌ {message}"
                             await send_text_message(sender_id, reply)
                             admin_correction_state[sender_id] = "normal"
-                            continue
-                            
-                        # Check if admin is in correction flow
-                        current_state = admin_correction_state.get(sender_id, "normal")
-                        
-                        if current_state == "waiting_for_answer":
-                            # Admin provided the correct answer, now show intent menu
-                            admin_last_customer_message[sender_id] = message_text
-                            admin_correction_state[sender_id] = "waiting_for_intent"
-                            await send_intent_selection_menu(sender_id)
-                            continue
-                            
-                        elif current_state == "waiting_for_intent":
-                            # This shouldn't happen, but reset if it does
-                            admin_correction_state[sender_id] = "normal"
-                            
-                        # If not in correction mode, process as normal message
-                        # Store the message for potential future correction
+                            return Response(content="OK", status_code=200)
+                        # Not in correction mode, store message for potential correction, but process as normal message
                         admin_last_customer_message[sender_id] = message_text
-                        # Continue to normal message processing (no admin response)
+                    # --- END ADMIN CORRECTION FLOW ---
+
+                    # --- Check for empty or whitespace message ---
+                    if not message_text or not message_text.strip():
+                        print(f"[DEBUG] Empty or whitespace message received from {sender_id}")
+                        reply = "Sorry, I couldn't detect your language."
+                        await send_text_message(sender_id, reply)
+                        continue
 
                     # --- Rate limiting check ---
                     if is_rate_limited(sender_id, message_text):
