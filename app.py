@@ -134,6 +134,7 @@ async def handle_message(request: Request):
                             admin_correction_state[sender_id] = "waiting_for_answer"
                             reply = "Teach me the correct answer for the last customer message:"
                             await send_text_message(sender_id, reply)
+                            await send_correction_menu(sender_id)
                             return Response(content="OK", status_code=200)
                         # Manual correction command
                         correction_data = parse_correction(message_text)
@@ -685,6 +686,48 @@ def combine_responses(intents, lang="fr"):
         return "\n\n".join(combined_parts)
     else:
         return "Response not found for selected intents."
+
+# Function to send a Messenger button template for admin correction options
+async def send_correction_menu(recipient_id: str):
+    params = {"access_token": PAGE_ACCESS_TOKEN}
+    headers = {"Content-Type": "application/json"}
+    data = {
+        "recipient": {"id": recipient_id},
+        "message": {
+            "attachment": {
+                "type": "template",
+                "payload": {
+                    "template_type": "button",
+                    "text": "What would you like to do?",
+                    "buttons": [
+                        {
+                            "type": "postback",
+                            "title": "✅ Correct Intent",
+                            "payload": "CORRECT_INTENT_MENU"
+                        },
+                        {
+                            "type": "postback",
+                            "title": "📊 View Stats",
+                            "payload": "VIEW_STATS"
+                        },
+                        {
+                            "type": "postback",
+                            "title": "❓ Help",
+                            "payload": "ADMIN_HELP"
+                        }
+                    ]
+                }
+            }
+        }
+    }
+    try:
+        response = requests.post(f"{GRAPH_API_URL}/me/messages", params=params, headers=headers, json=data)
+        response.raise_for_status()
+        logging.info(f"Correction menu sent successfully to {recipient_id}")
+    except requests.exceptions.RequestException as e:
+        logging.error(f"Error sending correction menu to {recipient_id}: {e}")
+        if response is not None:
+            logging.error(f"Response: {response.text}")
 
 if __name__ == "__main__":
     import uvicorn
