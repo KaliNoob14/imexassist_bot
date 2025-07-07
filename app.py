@@ -267,13 +267,22 @@ async def handle_message(request: Request):
                             selected_intent = payload.replace("INTENT_", "")
                             last_message = admin_last_customer_message.get(sender_id, "No message stored")
                             
+                            # Only handle intent selection if admin is in correction flow
+                            current_state = admin_correction_state.get(sender_id, "normal")
+                            if current_state not in ("waiting_for_intent", "selecting_intents"):
+                                # Ignore intent selection if not in correction flow
+                                await send_text_message(sender_id, "No correction in progress. Please trigger correction first.")
+                                return Response(content="OK", status_code=200)
+                            
                             if selected_intent == "DONE":
                                 # Finalize multi-intent selection
                                 selected_intents = admin_selected_intents.get(sender_id, [])
                                 if not selected_intents:
                                     reply = "❌ No intents selected. Please select at least one intent."
                                     await send_text_message(sender_id, reply)
-                                    continue
+                                    admin_correction_state[sender_id] = "normal"
+                                    admin_selected_intents[sender_id] = []
+                                    return Response(content="OK", status_code=200)
                                 
                                 # Get the correct answer from the stored message
                                 correct_answer = last_message
@@ -296,11 +305,9 @@ async def handle_message(request: Request):
                                 # Reset correction state
                                 admin_correction_state[sender_id] = "normal"
                                 admin_selected_intents[sender_id] = []
-                                continue
+                                return Response(content="OK", status_code=200)
                             
                             # Check if we're in multi-select mode
-                            current_state = admin_correction_state.get(sender_id, "normal")
-                            
                             if current_state == "selecting_intents":
                                 # Add to selected intents
                                 if sender_id not in admin_selected_intents:
@@ -313,7 +320,7 @@ async def handle_message(request: Request):
                                     reply = f"⚠️ {selected_intent} already selected.\nSelected: {', '.join(admin_selected_intents[sender_id])}\nClick ✅ Done when finished."
                                 
                                 await send_text_message(sender_id, reply)
-                                continue
+                                return Response(content="OK", status_code=200)
                             
                             # Single intent selection (original behavior)
                             # Get the correct answer from the stored message
@@ -331,7 +338,7 @@ async def handle_message(request: Request):
                             
                             # Reset correction state
                             admin_correction_state[sender_id] = "normal"
-                            continue
+                            return Response(content="OK", status_code=200)
                         elif payload == "SINGLE_INTENT":
                             await send_intent_selection_menu(sender_id, multi_select=False)
                             continue
