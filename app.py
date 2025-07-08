@@ -122,8 +122,12 @@ async def handle_message(request: Request):
                         # Correction step: waiting for correct answer
                         if current_state == "waiting_for_answer":
                             admin_last_customer_message[sender_id] = message_text
-                            admin_correction_state[sender_id] = "waiting_for_intent"
-                            await send_intent_selection_menu(sender_id)
+                            admin_correction_state[sender_id] = "waiting_for_correction_mode"
+                            await send_correction_mode_menu(sender_id)
+                            return Response(content="OK", status_code=200)
+                        # Correction step: waiting for correction mode (single/multi intent)
+                        elif current_state == "waiting_for_correction_mode":
+                            # Only handle via postback, ignore text
                             return Response(content="OK", status_code=200)
                         # Correction step: waiting for intent selection (handled in postback)
                         elif current_state in ("waiting_for_intent", "selecting_intents"):
@@ -134,7 +138,6 @@ async def handle_message(request: Request):
                             admin_correction_state[sender_id] = "waiting_for_answer"
                             reply = "Teach me the correct answer for the last customer message:"
                             await send_text_message(sender_id, reply)
-                            await send_correction_mode_menu(sender_id)
                             return Response(content="OK", status_code=200)
                         # Manual correction command
                         correction_data = parse_correction(message_text)
@@ -321,6 +324,7 @@ async def handle_message(request: Request):
                             admin_correction_state[sender_id] = "normal"
                             return Response(content="OK", status_code=200)
                         elif payload == "SINGLE_INTENT":
+                            admin_correction_state[sender_id] = "waiting_for_intent"
                             await send_intent_selection_menu(sender_id, multi_select=False)
                             continue
                         elif payload == "MULTI_INTENT":
@@ -606,49 +610,39 @@ async def setup_persistent_menu():
         logging.error(f"Failed to set up persistent menu: {e}")
 
 async def send_intent_selection_menu(recipient_id, multi_select=False):
-    """Send a button template for intent selection (single or multi-select)"""
-    # Messenger button templates support max 3 buttons per template, so we need to send multiple messages if more
-    intent_buttons = [
-        {"type": "postback", "title": "👋 Greeting", "payload": "INTENT_greeting"},
-        {"type": "postback", "title": "💰 Pricing", "payload": "INTENT_pricing"},
-        {"type": "postback", "title": "🚢 Shipping", "payload": "INTENT_shipping"},
-        {"type": "postback", "title": "⏰ Duration", "payload": "INTENT_shipping_duration"},
-        {"type": "postback", "title": "📞 Contact", "payload": "INTENT_contact"},
-        {"type": "postback", "title": "📍 Location", "payload": "INTENT_location"},
-        {"type": "postback", "title": "🛍️ Products", "payload": "INTENT_product_info"},
-        {"type": "postback", "title": "🙏 Thanks", "payload": "INTENT_thanks"},
-        {"type": "postback", "title": "🕐 Hours", "payload": "INTENT_opening_hours"}
+    """Send a quick reply menu for intent selection (single or multi-select)"""
+    # Define all intents as quick replies
+    intent_quick_replies = [
+        {"content_type": "text", "title": "👋 Greeting", "payload": "INTENT_greeting"},
+        {"content_type": "text", "title": "💰 Pricing", "payload": "INTENT_pricing"},
+        {"content_type": "text", "title": "🚢 Shipping", "payload": "INTENT_shipping"},
+        {"content_type": "text", "title": "⏰ Duration", "payload": "INTENT_shipping_duration"},
+        {"content_type": "text", "title": "📞 Contact", "payload": "INTENT_contact"},
+        {"content_type": "text", "title": "📍 Location", "payload": "INTENT_location"},
+        {"content_type": "text", "title": "🛍️ Products", "payload": "INTENT_product_info"},
+        {"content_type": "text", "title": "🙏 Thanks", "payload": "INTENT_thanks"},
+        {"content_type": "text", "title": "🕐 Hours", "payload": "INTENT_opening_hours"}
     ]
     if multi_select:
-        intent_buttons.append({"type": "postback", "title": "✅ Done", "payload": "INTENT_DONE"})
+        intent_quick_replies.append({"content_type": "text", "title": "✅ Done", "payload": "INTENT_DONE"})
         message_text = "Select all relevant intents (tap ✅ Done when finished):"
     else:
         message_text = "Select the correct intent for the last customer message:"
 
-    # Messenger button templates support max 3 buttons per template
-    # We'll send multiple templates if needed
     params = {"access_token": PAGE_ACCESS_TOKEN}
     headers = {"Content-Type": "application/json"}
-    for i in range(0, len(intent_buttons), 3):
-        buttons = intent_buttons[i:i+3]
-        data = {
-            "recipient": {"id": recipient_id},
-            "message": {
-                "attachment": {
-                    "type": "template",
-                    "payload": {
-                        "template_type": "button",
-                        "text": message_text if i == 0 else "More intents:",
-                        "buttons": buttons
-                    }
-                }
-            }
+    data = {
+        "recipient": {"id": recipient_id},
+        "message": {
+            "text": message_text,
+            "quick_replies": intent_quick_replies
         }
-        try:
-            response = requests.post(f"{GRAPH_API_URL}/me/messages", params=params, headers=headers, json=data)
-            response.raise_for_status()
-        except Exception as e:
-            logging.error(f"Failed to send intent button template: {e}")
+    }
+    try:
+        response = requests.post(f"{GRAPH_API_URL}/me/messages", params=params, headers=headers, json=data)
+        response.raise_for_status()
+    except Exception as e:
+        logging.error(f"Failed to send intent quick replies: {e}")
 
 # --- REPLACE correction mode quick replies with button template ---
 async def send_correction_mode_menu(recipient_id):
