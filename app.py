@@ -9,6 +9,8 @@ from language_nn import detect_language
 from intent_nn import predict_intent
 from dictionary.intent_keywords import INTENT_KEYWORDS
 import json
+import string
+import re
 
 load_dotenv() # Load environment variables from .env during local dev
 
@@ -34,6 +36,59 @@ ADMIN_SENDER_IDS = [
     "10073659842756382",  # Add your Facebook user ID here
     # Add more admin IDs as needed
 ]
+
+LIVE_CORRECTIONS_FILE = "live_corrections.jsonl"
+LIVE_CORRECTIONS = {}
+
+def strip_emojis(text):
+    # Remove all emoji characters using regex
+    emoji_pattern = re.compile(
+        "["
+        "\U0001F600-\U0001F64F"  # emoticons
+        "\U0001F300-\U0001F5FF"  # symbols & pictographs
+        "\U0001F680-\U0001F6FF"  # transport & map symbols
+        "\U0001F1E0-\U0001F1FF"  # flags (iOS)
+        "\U00002700-\U000027BF"  # Dingbats
+        "\U0001F900-\U0001F9FF"  # Supplemental Symbols and Pictographs
+        "\U00002600-\U000026FF"  # Misc symbols
+        "\U00002B50-\U00002B55"  # Stars
+        "\U00002300-\U000023FF"  # Misc technical
+        "]+",
+        flags=re.UNICODE)
+    return emoji_pattern.sub(r'', text)
+
+def normalize_message(text):
+    # Lowercase, strip, remove punctuation, remove emojis
+    text = text.lower().strip()
+    text = strip_emojis(text)
+    return text.translate(str.maketrans('', '', string.punctuation))
+
+def load_live_corrections():
+    try:
+        with open(LIVE_CORRECTIONS_FILE, "r", encoding="utf-8") as f:
+            for line in f:
+                entry = json.loads(line)
+                key = normalize_message(entry["customer_message"])
+                LIVE_CORRECTIONS[key] = {
+                    "intent": entry["correct_intent"],
+                    "response": entry["correct_response"]
+                }
+    except FileNotFoundError:
+        pass
+
+def save_live_correction(customer_message, intent, response):
+    entry = {
+        "customer_message": customer_message,
+        "correct_intent": intent,
+        "correct_response": response
+    }
+    with open(LIVE_CORRECTIONS_FILE, "a", encoding="utf-8") as f:
+        f.write(json.dumps(entry, ensure_ascii=False) + "\n")
+    key = normalize_message(customer_message)
+    LIVE_CORRECTIONS[key] = {"intent": intent, "response": response}
+
+# Load live corrections on startup
+load_live_corrections()
 
 def is_rate_limited(sender_id: str, message_text: str, cooldown_seconds: int = 3) -> bool:
     """Check if user is sending messages too quickly"""
@@ -221,17 +276,24 @@ async def handle_message(request: Request):
                         await send_text_message(sender_id, reply)
                         continue
 
+                    # --- LIVE CORRECTION CHECK ---
+                    norm_msg = normalize_message(message_text)
+                    if norm_msg in LIVE_CORRECTIONS:
+                        corr = LIVE_CORRECTIONS[norm_msg]
+                        reply = corr["response"]
+                        await send_text_message(sender_id, reply)
+                        continue
+                    # --- STRIP EMOJIS FOR INTENT RECOGNITION ---
+                    clean_message_text = strip_emojis(message_text)
                     # --- Rate limiting check ---
                     if is_rate_limited(sender_id, message_text):
                         print(f"[DEBUG] Rate limited message from {sender_id}: {message_text}")
                         continue
-
                     # --- fastText language detection and response ---
-                    lang_code, confidence = detect_language(message_text)
+                    lang_code, confidence = detect_language(clean_message_text)
                     print(f"[DEBUG] fastText detected: {lang_code} (confidence: {confidence:.2f})")
-
                     # --- Intent detection ---
-                    intent, intent_conf = predict_intent(message_text)
+                    intent, intent_conf = predict_intent(clean_message_text)
                     print(f"[DEBUG] Predicted intent: {intent} (confidence: {intent_conf:.2f})")
 
                     # --- Intent-based response logic ---
@@ -588,6 +650,9 @@ def apply_correction(correction_data, original_message):
         with open(CORRECTIONS_FILE, "a", encoding="utf-8") as f:
             f.write(json.dumps(correction_entry, ensure_ascii=False) + "\n")
         
+        # --- LIVE CORRECTION PERSISTENCE ---
+        save_live_correction(original_message, intent, response)
+
         return True, f"Correction applied! Intent: {intent}, Response: {response[:50]}..."
         
     except Exception as e:
@@ -631,6 +696,8 @@ async def correction_endpoint(
     }
     with open(CORRECTIONS_FILE, "a", encoding="utf-8") as f:
         f.write(json.dumps(correction_entry, ensure_ascii=False) + "\n")
+    # --- LIVE CORRECTION PERSISTENCE ---
+    save_live_correction(customer_message, correct_intent, correct_response)
     return {"status": "success", "message": "Correction applied and saved."}
 
 async def setup_persistent_menu():
