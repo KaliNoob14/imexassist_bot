@@ -673,39 +673,48 @@ async def setup_persistent_menu():
         logging.error(f"Failed to set up persistent menu: {e}")
 
 async def send_intent_selection_menu(recipient_id, multi_select=False):
-    """Send a quick reply menu for intent selection (single or multi-select)"""
-    # Define all intents as quick replies
-    intent_quick_replies = [
-        {"content_type": "text", "title": "👋 Greeting", "payload": "INTENT_greeting"},
-        {"content_type": "text", "title": "💰 Pricing", "payload": "INTENT_pricing"},
-        {"content_type": "text", "title": "🚢 Shipping", "payload": "INTENT_shipping"},
-        {"content_type": "text", "title": "⏰ Duration", "payload": "INTENT_shipping_duration"},
-        {"content_type": "text", "title": "📞 Contact", "payload": "INTENT_contact"},
-        {"content_type": "text", "title": "📍 Location", "payload": "INTENT_location"},
-        {"content_type": "text", "title": "🛍️ Products", "payload": "INTENT_product_info"},
-        {"content_type": "text", "title": "🙏 Thanks", "payload": "INTENT_thanks"},
-        {"content_type": "text", "title": "🕐 Hours", "payload": "INTENT_opening_hours"}
+    """Send a button template for intent selection (single or multi-select)"""
+    # Define all intents as button template buttons
+    intent_buttons = [
+        {"type": "postback", "title": "👋 Greeting", "payload": "INTENT_greeting"},
+        {"type": "postback", "title": "💰 Pricing", "payload": "INTENT_pricing"},
+        {"type": "postback", "title": "🚢 Shipping", "payload": "INTENT_shipping"},
+        {"type": "postback", "title": "⏰ Duration", "payload": "INTENT_shipping_duration"},
+        {"type": "postback", "title": "📞 Contact", "payload": "INTENT_contact"},
+        {"type": "postback", "title": "📍 Location", "payload": "INTENT_location"},
+        {"type": "postback", "title": "🛍️ Products", "payload": "INTENT_product_info"},
+        {"type": "postback", "title": "🙏 Thanks", "payload": "INTENT_thanks"},
+        {"type": "postback", "title": "🕐 Hours", "payload": "INTENT_opening_hours"}
     ]
+    message_text = "Select the correct intent for the last customer message:"
     if multi_select:
-        intent_quick_replies.append({"content_type": "text", "title": "✅ Done", "payload": "INTENT_DONE"})
+        # Add 'Done' button to the last template
+        intent_buttons.append({"type": "postback", "title": "✅ Done", "payload": "INTENT_DONE"})
         message_text = "Select all relevant intents (tap ✅ Done when finished):"
-    else:
-        message_text = "Select the correct intent for the last customer message:"
 
     params = {"access_token": PAGE_ACCESS_TOKEN}
     headers = {"Content-Type": "application/json"}
-    data = {
-        "recipient": {"id": recipient_id},
-        "message": {
-            "text": message_text,
-            "quick_replies": intent_quick_replies
+    # Send button templates in groups of 3
+    for i in range(0, len(intent_buttons), 3):
+        buttons = intent_buttons[i:i+3]
+        data = {
+            "recipient": {"id": recipient_id},
+            "message": {
+                "attachment": {
+                    "type": "template",
+                    "payload": {
+                        "template_type": "button",
+                        "text": message_text if i == 0 else "More intents:",
+                        "buttons": buttons
+                    }
+                }
+            }
         }
-    }
-    try:
-        response = requests.post(f"{GRAPH_API_URL}/me/messages", params=params, headers=headers, json=data)
-        response.raise_for_status()
-    except Exception as e:
-        logging.error(f"Failed to send intent quick replies: {e}")
+        try:
+            response = requests.post(f"{GRAPH_API_URL}/me/messages", params=params, headers=headers, json=data)
+            response.raise_for_status()
+        except Exception as e:
+            logging.error(f"Failed to send intent button template: {e}")
 
 # --- REPLACE correction mode quick replies with button template ---
 async def send_correction_mode_menu(recipient_id):
