@@ -151,6 +151,69 @@ async def handle_message(request: Request):
                         admin_last_customer_message[sender_id] = message_text
                     # --- END ADMIN CORRECTION FLOW ---
 
+                    # --- Handle quick reply payloads for intent selection ---
+                    if "quick_reply" in messaging_event["message"]:
+                        quick_reply_payload = messaging_event["message"]["quick_reply"]["payload"]
+                        # Reuse the postback logic for intent selection
+                        if sender_id in ADMIN_SENDER_IDS and quick_reply_payload.startswith("INTENT_"):
+                            selected_intent = quick_reply_payload.replace("INTENT_", "")
+                            last_message = admin_last_customer_message.get(sender_id, "No message stored")
+                            current_state = admin_correction_state.get(sender_id, "normal")
+                            if current_state not in ("waiting_for_intent", "selecting_intents"):
+                                await send_text_message(sender_id, "No correction in progress. Please trigger correction first.")
+                                admin_correction_state[sender_id] = "normal"
+                                admin_selected_intents[sender_id] = []
+                                return Response(content="OK", status_code=200)
+                            if selected_intent == "DONE":
+                                selected_intents = admin_selected_intents.get(sender_id, [])
+                                if not selected_intents:
+                                    reply = "❌ No intents selected. Please select at least one intent."
+                                    await send_text_message(sender_id, reply)
+                                    admin_correction_state[sender_id] = "normal"
+                                    admin_selected_intents[sender_id] = []
+                                    return Response(content="OK", status_code=200)
+                                correct_answer = last_message
+                                success_count = 0
+                                for intent in selected_intents:
+                                    correction_data = {
+                                        "intent": intent,
+                                        "response": correct_answer,
+                                        "lang": "fr"
+                                    }
+                                    success, _ = apply_correction(correction_data, last_message)
+                                    if success:
+                                        success_count += 1
+                                reply = f"✅ Applied correction to {success_count}/{len(selected_intents)} intents: {', '.join(selected_intents)}"
+                                await send_text_message(sender_id, reply)
+                                # Always reset state after correction
+                                admin_correction_state[sender_id] = "normal"
+                                admin_selected_intents[sender_id] = []
+                                return Response(content="OK", status_code=200)
+                            if current_state == "selecting_intents":
+                                if sender_id not in admin_selected_intents:
+                                    admin_selected_intents[sender_id] = []
+                                if selected_intent not in admin_selected_intents[sender_id]:
+                                    admin_selected_intents[sender_id].append(selected_intent)
+                                    reply = f"✅ Added: {selected_intent}\nSelected: {', '.join(admin_selected_intents[sender_id])}\nTap ✅ Done when finished."
+                                else:
+                                    reply = f"⚠️ {selected_intent} already selected.\nSelected: {', '.join(admin_selected_intents[sender_id])}\nTap ✅ Done when finished."
+                                await send_text_message(sender_id, reply)
+                                return Response(content="OK", status_code=200)
+                            correct_answer = last_message
+                            correction_data = {
+                                "intent": selected_intent,
+                                "response": correct_answer,
+                                "lang": "fr"
+                            }
+                            success, message = apply_correction(correction_data, last_message)
+                            reply = f"✅ {message}" if success else f"❌ {message}"
+                            await send_text_message(sender_id, reply)
+                            # Always reset state after correction
+                            admin_correction_state[sender_id] = "normal"
+                            admin_selected_intents[sender_id] = []
+                            return Response(content="OK", status_code=200)
+                    # --- END Handle quick reply payloads for intent selection ---
+
                     # --- Check for empty or whitespace message ---
                     if not message_text or not message_text.strip():
                         print(f"[DEBUG] Empty or whitespace message received from {sender_id}")
