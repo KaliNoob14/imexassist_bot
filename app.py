@@ -235,8 +235,8 @@ async def handle_message(request: Request):
                         # --- Correction flow: waiting for correct answer ---
                         current_state = admin_correction_state.get(sender_id, "normal")
                         if current_state == "waiting_for_answer":
-                            # Save the admin's answer, but use the last customer message for correction
-                            admin_last_customer_message[sender_id] = message_text
+                            # Save the admin's answer as the response, but use the last customer message for correction
+                            admin_last_correct_response[sender_id] = message_text
                             admin_correction_state[sender_id] = "waiting_for_correction_mode"
                             await send_correction_mode_menu(sender_id)
                             return Response(content="OK", status_code=200)
@@ -257,8 +257,9 @@ async def handle_message(request: Request):
                         # --- Manual correction command ---
                         correction_data = parse_correction(message_text)
                         if correction_data:
-                            # Use the last customer message for correction
+                            # Use the last customer message for correction, admin's input as response
                             last_msg = last_customer_message_for_correction.get(sender_id, "No message stored")
+                            correction_data['response'] = correction_data.get('response', message_text)
                             success, message = apply_correction(correction_data, last_msg)
                             reply = f"✅ {message}" if success else f"❌ {message}"
                             await send_text_message(sender_id, reply)
@@ -309,7 +310,7 @@ async def handle_message(request: Request):
                         # Reuse the postback logic for intent selection
                         if sender_id in ADMIN_SENDER_IDS and quick_reply_payload.startswith("INTENT_"):
                             selected_intent = quick_reply_payload.replace("INTENT_", "")
-                            last_message = admin_last_customer_message.get(sender_id, "No message stored")
+                            last_message = last_customer_message_for_correction.get(sender_id, "No message stored")
                             current_state = admin_correction_state.get(sender_id, "normal")
                             if current_state not in ("waiting_for_intent", "selecting_intents"):
                                 await send_text_message(sender_id, "No correction in progress. Please trigger correction first.")
@@ -471,7 +472,7 @@ async def handle_message(request: Request):
                         elif payload.startswith("INTENT_"):
                             # Handle intent selection
                             selected_intent = payload.replace("INTENT_", "")
-                            last_message = admin_last_customer_message.get(sender_id, "No message stored")
+                            last_message = last_customer_message_for_correction.get(sender_id, "No message stored")
                             
                             # Only handle intent selection if admin is in correction flow
                             current_state = admin_correction_state.get(sender_id, "normal")
@@ -937,6 +938,8 @@ async def send_correction_mode_menu(recipient_id):
 
 # Store the last customer message for each admin user
 admin_last_customer_message = {}
+# Store the last correct response from admin for each admin user
+admin_last_correct_response = {}
 
 # Store the last customer message for each conversation (not admin)
 last_customer_message_for_correction = {}
