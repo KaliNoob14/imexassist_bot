@@ -243,12 +243,15 @@ async def handle_webhook(request: Request):
                     if sender_id in ADMIN_SENDER_IDS and any(trigger in message_text.lower() for trigger in CORRECTION_TRIGGERS):
                         await send_correction_menu(sender_id)
                         continue
+                    # Clean message for intent/language detection
+                    cleaned_message = strip_emojis(message_text)
+                    cleaned_message = cleaned_message.strip()
                     # Language detection
-                    lang, lang_conf = detect_language(message_text)
+                    lang, lang_conf = detect_language(cleaned_message)
                     if not lang:
                         lang = "fr"
                     # Intent prediction
-                    intent, intent_conf = predict_intent(message_text)
+                    intent, intent_conf = predict_intent(cleaned_message)
                     # Check for live correction
                     norm_msg = normalize_message(message_text)
                     if norm_msg in LIVE_CORRECTIONS:
