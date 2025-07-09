@@ -18,6 +18,7 @@ from modules.admin_correction import (
     view_live_corrections, delete_live_correction, cancel_correction_flow, show_correction_history
 )
 from fastapi.responses import PlainTextResponse
+import asyncio
 
 load_dotenv() # Load environment variables from .env during local dev
 
@@ -177,6 +178,19 @@ def combine_responses(intents, lang="fr"):
     else:
         return "Response not found for selected intents."
 
+def send_message(recipient_id, message_text):
+    params = {"access_token": PAGE_ACCESS_TOKEN}
+    headers = {"Content-Type": "application/json"}
+    data = {
+        "recipient": {"id": recipient_id},
+        "message": {"text": message_text}
+    }
+    try:
+        response = requests.post(f"{GRAPH_API_URL}/me/messages", params=params, headers=headers, json=data)
+        response.raise_for_status()
+    except Exception as e:
+        logging.error(f"Failed to send message: {e}")
+
 @app.get("/webhook")
 def verify_webhook(request: Request):
     """Facebook webhook verification endpoint (GET)"""
@@ -189,9 +203,63 @@ def verify_webhook(request: Request):
 
 @app.post("/webhook")
 async def handle_webhook(request: Request):
-    """Facebook webhook event handler (POST)"""
-    body = await request.body()
+    body = await request.json()
     logging.info(f"Received webhook event: {body}")
+    if "object" in body and body["object"] == "page":
+        for entry in body.get("entry", []):
+            for event in entry.get("messaging", []):
+                sender_id = event.get("sender", {}).get("id")
+                if not sender_id:
+                    continue
+                # Handle postbacks (admin correction, intent selection, etc.)
+                if "postback" in event:
+                    payload = event["postback"].get("payload", "")
+                    # Admin correction menu
+                    if payload == "CORRECT_INTENT_MENU":
+                        await send_correction_mode_menu(sender_id)
+                    elif payload == "VIEW_LIVE_CORRECTIONS":
+                        await view_live_corrections(sender_id)
+                    elif payload.startswith("VIEW_LIVE_CORRECTIONS|"):
+                        try:
+                            page = int(payload.split("|")[1])
+                        except Exception:
+                            page = 1
+                        await view_live_corrections(sender_id, page)
+                    elif payload.startswith("DELETE_LIVE_CORRECTION|"):
+                        key = payload.split("|", 1)[1]
+                        await delete_live_correction(sender_id, key)
+                    elif payload == "CANCEL_CORRECTION_FLOW":
+                        await cancel_correction_flow(sender_id)
+                    elif payload.startswith("SHOW_CORRECTION_HISTORY|"):
+                        key = payload.split("|", 1)[1]
+                        await show_correction_history(sender_id, key)
+                    # Add more admin postback handlers as needed
+                    else:
+                        send_message(sender_id, "Unknown admin action.")
+                # Handle normal messages
+                elif "message" in event and "text" in event["message"]:
+                    message_text = event["message"]["text"]
+                    # Admin correction triggers
+                    if sender_id in ADMIN_SENDER_IDS and any(trigger in message_text.lower() for trigger in CORRECTION_TRIGGERS):
+                        await send_correction_menu(sender_id)
+                        continue
+                    # Language detection
+                    lang, lang_conf = detect_language(message_text)
+                    if not lang:
+                        lang = "fr"
+                    # Intent prediction
+                    intent, intent_conf = predict_intent(message_text)
+                    # Check for live correction
+                    norm_msg = normalize_message(message_text)
+                    if norm_msg in LIVE_CORRECTIONS:
+                        corr = LIVE_CORRECTIONS[norm_msg]
+                        send_message(sender_id, corr["response"])
+                        continue
+                    # Normal intent response
+                    if intent and intent in INTENT_RESPONSES and lang in INTENT_RESPONSES[intent]:
+                        send_message(sender_id, INTENT_RESPONSES[intent][lang])
+                    else:
+                        send_message(sender_id, DEFAULT_RESPONSES.get(lang, DEFAULT_RESPONSES["fr"]))
     return {"status": "ok"}
 
 if __name__ == "__main__":
