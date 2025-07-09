@@ -17,6 +17,7 @@ from modules.admin_correction import (
     send_correction_menu, send_correction_mode_menu, send_intent_selection_menu,
     view_live_corrections, delete_live_correction, cancel_correction_flow, show_correction_history
 )
+from fastapi.responses import PlainTextResponse
 
 load_dotenv() # Load environment variables from .env during local dev
 
@@ -175,6 +176,23 @@ def combine_responses(intents, lang="fr"):
         return "\n\n".join(combined_parts)
     else:
         return "Response not found for selected intents."
+
+@app.get("/webhook")
+def verify_webhook(request: Request):
+    """Facebook webhook verification endpoint (GET)"""
+    mode = request.query_params.get("hub.mode")
+    token = request.query_params.get("hub.verify_token")
+    challenge = request.query_params.get("hub.challenge")
+    if mode == "subscribe" and token == VERIFY_TOKEN:
+        return PlainTextResponse(content=challenge, status_code=200)
+    return PlainTextResponse(content="Verification failed", status_code=403)
+
+@app.post("/webhook")
+async def handle_webhook(request: Request):
+    """Facebook webhook event handler (POST)"""
+    body = await request.body()
+    logging.info(f"Received webhook event: {body}")
+    return {"status": "ok"}
 
 if __name__ == "__main__":
     import uvicorn
