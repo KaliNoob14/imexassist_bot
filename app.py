@@ -171,6 +171,10 @@ async def handle_message(request: Request):
                     message_text = messaging_event["message"]["text"]
                     print(f"[DEBUG] Received message from {sender_id}: {message_text}")
 
+                    # --- Track last customer message for correction (only if not admin) ---
+                    if sender_id not in ADMIN_SENDER_IDS:
+                        last_customer_message_for_correction[sender_id] = message_text
+
                     # --- ADMIN HANDLING ---
                     if sender_id in ADMIN_SENDER_IDS:
                         logging.info(f"[ADMIN DEBUG] sender_id: {sender_id}, ADMIN_SENDER_IDS: {ADMIN_SENDER_IDS}")
@@ -228,6 +232,40 @@ async def handle_message(request: Request):
                                     await send_text_message(sender_id, msg)
                             admin_pending_history[sender_id] = False
                             return Response(content="OK", status_code=200)
+                        # --- Correction flow: waiting for correct answer ---
+                        current_state = admin_correction_state.get(sender_id, "normal")
+                        if current_state == "waiting_for_answer":
+                            # Save the admin's answer, but use the last customer message for correction
+                            admin_last_customer_message[sender_id] = message_text
+                            admin_correction_state[sender_id] = "waiting_for_correction_mode"
+                            await send_correction_mode_menu(sender_id)
+                            return Response(content="OK", status_code=200)
+                        # --- Correction step: waiting for correction mode (single/multi intent) ---
+                        elif current_state == "waiting_for_correction_mode":
+                            # Only handle via postback, ignore text
+                            return Response(content="OK", status_code=200)
+                        # --- Correction step: waiting for intent selection (handled in postback) ---
+                        elif current_state in ("waiting_for_intent", "selecting_intents"):
+                            # Do nothing here, handled in postback
+                            return Response(content="OK", status_code=200)
+                        # --- Correction trigger ---
+                        if message_text.lower().strip() in CORRECTION_TRIGGERS:
+                            admin_correction_state[sender_id] = "waiting_for_answer"
+                            reply = "Teach me the correct answer for the last customer message:"
+                            await send_text_message(sender_id, reply)
+                            return Response(content="OK", status_code=200)
+                        # --- Manual correction command ---
+                        correction_data = parse_correction(message_text)
+                        if correction_data:
+                            # Use the last customer message for correction
+                            last_msg = last_customer_message_for_correction.get(sender_id, "No message stored")
+                            success, message = apply_correction(correction_data, last_msg)
+                            reply = f"✅ {message}" if success else f"❌ {message}"
+                            await send_text_message(sender_id, reply)
+                            admin_correction_state[sender_id] = "normal"
+                            return Response(content="OK", status_code=200)
+                        # Not in correction mode, store message for potential correction, but process as normal message
+                        admin_last_customer_message[sender_id] = message_text
                     # --- END ADMIN HANDLING ---
 
                     # --- ADMIN CORRECTION FLOW (handle before normal message processing) ---
@@ -899,6 +937,9 @@ async def send_correction_mode_menu(recipient_id):
 
 # Store the last customer message for each admin user
 admin_last_customer_message = {}
+
+# Store the last customer message for each conversation (not admin)
+last_customer_message_for_correction = {}
 
 # Track admin correction state
 admin_correction_state = {}  # "waiting_for_answer" or "waiting_for_intent" or "selecting_intents"
