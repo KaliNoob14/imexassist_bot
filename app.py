@@ -491,6 +491,7 @@ async def handle_message(request: Request):
 
                     # --- ADMIN MENU TRIGGER ---
                     if message_text.lower().strip() in ADMIN_MENU_TRIGGERS:
+                        logging.info(f"[ADMIN MENU TRIGGER] Trigger word received from {sender_id}: {message_text}")
                         await send_correction_menu(sender_id)
                         return Response(content="OK", status_code=200)
                     # --- Handle pending delete flow ---
