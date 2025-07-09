@@ -171,6 +171,65 @@ async def handle_message(request: Request):
                     message_text = messaging_event["message"]["text"]
                     print(f"[DEBUG] Received message from {sender_id}: {message_text}")
 
+                    # --- ADMIN HANDLING ---
+                    if sender_id in ADMIN_SENDER_IDS:
+                        logging.info(f"[ADMIN DEBUG] sender_id: {sender_id}, ADMIN_SENDER_IDS: {ADMIN_SENDER_IDS}")
+                        # --- ADMIN MENU TRIGGER (must be first) ---
+                        if message_text.lower().strip() in ADMIN_MENU_TRIGGERS:
+                            logging.info(f"[ADMIN MENU TRIGGER] Trigger word received from {sender_id}: {message_text}")
+                            await send_correction_menu(sender_id)
+                            return Response(content="OK", status_code=200)
+                        # --- Handle pending delete flow ---
+                        if sender_id in admin_pending_delete and admin_pending_delete[sender_id]:
+                            # Try to delete the normalized message from live corrections
+                            norm_msg = normalize_message(message_text)
+                            if norm_msg in LIVE_CORRECTIONS:
+                                # Remove from memory
+                                del LIVE_CORRECTIONS[norm_msg]
+                                # Remove from file
+                                try:
+                                    with open(LIVE_CORRECTIONS_FILE, "r", encoding="utf-8") as f:
+                                        lines = f.readlines()
+                                    with open(LIVE_CORRECTIONS_FILE, "w", encoding="utf-8") as f:
+                                        for line in lines:
+                                            entry = json.loads(line)
+                                            if normalize_message(entry["customer_message"]) != norm_msg:
+                                                f.write(line)
+                                    reply = "✅ Live correction deleted."
+                                except Exception as e:
+                                    reply = f"❌ Error deleting: {e}"
+                            else:
+                                reply = "❌ No live correction found for that message."
+                            await send_text_message(sender_id, reply)
+                            admin_pending_delete[sender_id] = False
+                            return Response(content="OK", status_code=200)
+                        # --- Handle pending history flow ---
+                        if sender_id in admin_pending_history and admin_pending_history[sender_id]:
+                            norm_msg = normalize_message(message_text)
+                            # Search corrections.jsonl for all corrections for this normalized message
+                            history = []
+                            try:
+                                with open(CORRECTIONS_FILE, "r", encoding="utf-8") as f:
+                                    for line in f:
+                                        entry = json.loads(line)
+                                        if normalize_message(entry["customer_message"]) == norm_msg:
+                                            history.append(entry)
+                            except Exception as e:
+                                await send_text_message(sender_id, f"❌ Error reading history: {e}")
+                                admin_pending_history[sender_id] = False
+                                return Response(content="OK", status_code=200)
+                            if not history:
+                                await send_text_message(sender_id, "No correction history found for that message.")
+                            else:
+                                for entry in history[-5:]:  # Show up to last 5
+                                    ts = entry.get("timestamp")
+                                    ts_str = time.strftime('%Y-%m-%d %H:%M', time.localtime(ts)) if ts else ""
+                                    msg = f"[{ts_str}] Intent: {entry.get('correct_intent')}\nResp: {entry.get('correct_response')}"
+                                    await send_text_message(sender_id, msg)
+                            admin_pending_history[sender_id] = False
+                            return Response(content="OK", status_code=200)
+                    # --- END ADMIN HANDLING ---
+
                     # --- ADMIN CORRECTION FLOW (handle before normal message processing) ---
                     if sender_id in ADMIN_SENDER_IDS:
                         current_state = admin_correction_state.get(sender_id, "normal")
@@ -489,60 +548,6 @@ async def handle_message(request: Request):
                     # Handle regular postbacks
                     await send_text_message(sender_id, f"Received payload: {payload}")
 
-                    # --- ADMIN MENU TRIGGER ---
-                    if message_text.lower().strip() in ADMIN_MENU_TRIGGERS:
-                        logging.info(f"[ADMIN MENU TRIGGER] Trigger word received from {sender_id}: {message_text}")
-                        await send_correction_menu(sender_id)
-                        return Response(content="OK", status_code=200)
-                    # --- Handle pending delete flow ---
-                    if sender_id in admin_pending_delete and admin_pending_delete[sender_id]:
-                        # Try to delete the normalized message from live corrections
-                        norm_msg = normalize_message(message_text)
-                        if norm_msg in LIVE_CORRECTIONS:
-                            # Remove from memory
-                            del LIVE_CORRECTIONS[norm_msg]
-                            # Remove from file
-                            try:
-                                with open(LIVE_CORRECTIONS_FILE, "r", encoding="utf-8") as f:
-                                    lines = f.readlines()
-                                with open(LIVE_CORRECTIONS_FILE, "w", encoding="utf-8") as f:
-                                    for line in lines:
-                                        entry = json.loads(line)
-                                        if normalize_message(entry["customer_message"]) != norm_msg:
-                                            f.write(line)
-                                reply = "✅ Live correction deleted."
-                            except Exception as e:
-                                reply = f"❌ Error deleting: {e}"
-                        else:
-                            reply = "❌ No live correction found for that message."
-                        await send_text_message(sender_id, reply)
-                        admin_pending_delete[sender_id] = False
-                        return Response(content="OK", status_code=200)
-                    # --- Handle pending history flow ---
-                    if sender_id in admin_pending_history and admin_pending_history[sender_id]:
-                        norm_msg = normalize_message(message_text)
-                        # Search corrections.jsonl for all corrections for this normalized message
-                        history = []
-                        try:
-                            with open(CORRECTIONS_FILE, "r", encoding="utf-8") as f:
-                                for line in f:
-                                    entry = json.loads(line)
-                                    if normalize_message(entry["customer_message"]) == norm_msg:
-                                        history.append(entry)
-                        except Exception as e:
-                            await send_text_message(sender_id, f"❌ Error reading history: {e}")
-                            admin_pending_history[sender_id] = False
-                            return Response(content="OK", status_code=200)
-                        if not history:
-                            await send_text_message(sender_id, "No correction history found for that message.")
-                        else:
-                            for entry in history[-5:]:  # Show up to last 5
-                                ts = entry.get("timestamp")
-                                ts_str = time.strftime('%Y-%m-%d %H:%M', time.localtime(ts)) if ts else ""
-                                msg = f"[{ts_str}] Intent: {entry.get('correct_intent')}\nResp: {entry.get('correct_response')}"
-                                await send_text_message(sender_id, msg)
-                        admin_pending_history[sender_id] = False
-                        return Response(content="OK", status_code=200)
     return Response(content="OK", status_code=200)
 
 # You can add a simple root endpoint for health checks or general info
