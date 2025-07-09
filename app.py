@@ -904,7 +904,7 @@ admin_selected_intents = {}
 CORRECTION_TRIGGERS = ["wrong", "wrong answer", "incorrect", "faux", "erreur", "pas correct"]
 
 # --- ADMIN MENU TRIGGER WORDS ---
-ADMIN_MENU_TRIGGERS = ["admin"]
+ADMIN_MENU_TRIGGERS = ["arimamy"]
 
 # --- EXTEND ADMIN MENU BUTTONS ---
 ADMIN_MENU_BUTTONS = [
