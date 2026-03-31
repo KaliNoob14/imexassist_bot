@@ -1,17 +1,21 @@
+import os
 from typing import Any, Dict
 
 import requests
+from dotenv import load_dotenv
 from fastapi.concurrency import run_in_threadpool
 
-from app.config import settings
 from app.services.vertex_llama_client import VertexLlamaClient
+
+load_dotenv()
+PAGE_ACCESS_TOKEN = os.getenv("PAGE_ACCESS_TOKEN", "")
+if not PAGE_ACCESS_TOKEN:
+    print("CRITICAL: PAGE_ACCESS_TOKEN is undefined!")
 
 
 class MessageHandler:
     def __init__(self, llm_client: VertexLlamaClient) -> None:
         self.llm_client = llm_client
-        if not settings.page_access_token:
-            print("CRITICAL: FB_PAGE_TOKEN IS MISSING")
 
     async def handle(self, webhook_payload: Dict[str, Any]) -> Dict[str, Any]:
         sent_count = 0
@@ -48,17 +52,21 @@ class MessageHandler:
         return {"status": "processed", "messages_sent": sent_count}
 
     async def _send_facebook_message(self, recipient_id: str, text: str) -> None:
-        url = (
-            "https://graph.facebook.com/v19.0/me/messages"
-            f"?access_token={settings.page_access_token}"
-        )
+        url = "https://graph.facebook.com/v19.0/me/messages"
         payload = {"recipient": {"id": recipient_id}, "message": {"text": text}}
+        params = {"access_token": PAGE_ACCESS_TOKEN}
 
-        response = await run_in_threadpool(
+        if not PAGE_ACCESS_TOKEN:
+            print("CRITICAL: PAGE_ACCESS_TOKEN is undefined!")
+            return
+
+        fb_response = await run_in_threadpool(
             requests.post,
             url,
+            params=params,
             json=payload,
             timeout=15,
         )
-        print(f"Meta Response: {response.status_code} - {response.text}")
-        response.raise_for_status()
+        print(f"Meta Response: {fb_response.status_code} - {fb_response.text}")
+        print(fb_response.text)
+        fb_response.raise_for_status()
