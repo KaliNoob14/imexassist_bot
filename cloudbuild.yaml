@@ -33,3 +33,6 @@ steps:
 
 images:
   - "europe-west1-docker.pkg.dev/imexassist-bot/imex-repo/imex-bot:$SHORT_SHA"
+
+  options:
+  logging: CLOUD_LOGGING_ONLY
