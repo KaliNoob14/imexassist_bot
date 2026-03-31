@@ -24,5 +24,13 @@ async def verify_webhook(
 
 @router.post("/webhook")
 async def receive_webhook(request: Request) -> Dict[str, Any]:
-    payload = await request.json()
-    return await message_handler.handle(payload)
+    try:
+        payload = await request.json()
+        if not isinstance(payload, dict):
+            print("DEBUG: Invalid webhook payload type received")
+            return {"status": "ok", "processed": False}
+        return await message_handler.handle(payload)
+    except Exception as exc:
+        # Always return 200 so Meta does not retry flood on transient failures.
+        print(f"Webhook processing error: {type(exc).__name__}: {exc}")
+        return {"status": "ok", "processed": False}

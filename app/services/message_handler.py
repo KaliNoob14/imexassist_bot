@@ -10,21 +10,39 @@ from app.services.vertex_llama_client import VertexLlamaClient
 class MessageHandler:
     def __init__(self, llm_client: VertexLlamaClient) -> None:
         self.llm_client = llm_client
+        if not settings.page_access_token:
+            print("CRITICAL: FB_PAGE_TOKEN IS MISSING")
 
     async def handle(self, webhook_payload: Dict[str, Any]) -> Dict[str, Any]:
         sent_count = 0
-        for entry in webhook_payload.get("entry", []):
-            for messaging_event in entry.get("messaging", []):
-                sender_id = (messaging_event.get("sender") or {}).get("id")
-                message_text = ((messaging_event.get("message") or {}).get("text") or "").strip()
+        try:
+            entries = webhook_payload.get("entry", [])
+            if not isinstance(entries, list):
+                return {"status": "processed", "messages_sent": 0}
 
-                if not sender_id or not message_text:
+            for entry in entries:
+                if not isinstance(entry, dict):
+                    continue
+                messaging_items = entry.get("messaging", [])
+                if not isinstance(messaging_items, list):
                     continue
 
-                ai_response = await self.llm_client.get_response(message_text)
-                if ai_response:
-                    await self._send_facebook_message(sender_id, ai_response)
-                    sent_count += 1
+                for messaging_event in messaging_items:
+                    if not isinstance(messaging_event, dict):
+                        continue
+
+                    sender_id = (messaging_event.get("sender") or {}).get("id")
+                    message_text = ((messaging_event.get("message") or {}).get("text") or "").strip()
+                    if not sender_id or not message_text:
+                        continue
+
+                    print(f"DEBUG: Processing message from {sender_id}")
+                    ai_response = await self.llm_client.get_response(message_text)
+                    if ai_response:
+                        await self._send_facebook_message(sender_id, ai_response)
+                        sent_count += 1
+        except Exception as exc:
+            print(f"Message handler error: {type(exc).__name__}: {exc}")
 
         return {"status": "processed", "messages_sent": sent_count}
 

@@ -18,7 +18,7 @@ class VertexLlamaClient:
         self.project_id = project_id
         # Llama MaaS models are most stable through us-central1.
         self.region = "us-central1"
-        self.model_name = "publishers/meta/models/llama-3.3-70b-instruct-maas"
+        self.model_name = "publishers/meta/models/llama3-3-70b-instruct-maas"
         self._initialized = False
         self._model: Optional[Any] = None
 
