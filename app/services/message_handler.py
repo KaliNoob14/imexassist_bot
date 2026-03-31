@@ -8,7 +8,7 @@ from fastapi.concurrency import run_in_threadpool
 from app.services.vertex_llama_client import VertexLlamaClient
 
 load_dotenv()
-PAGE_ACCESS_TOKEN = os.getenv("PAGE_ACCESS_TOKEN", "")
+PAGE_ACCESS_TOKEN = os.getenv('PAGE_ACCESS_TOKEN')
 if not PAGE_ACCESS_TOKEN:
     print("CRITICAL: PAGE_ACCESS_TOKEN is undefined!")
 

@@ -31,10 +31,18 @@ class VertexLlamaClient:
     def _ensure_initialized(self) -> None:
         if self._initialized:
             return
-        vertexai.init(project=self.project_id, location=self.region)
-        self._model = GenerativeModel(
-            model_name=self.model_name, system_instruction=self.system_instruction
-        )
+        vertexai.init(project="imexassist-bot", location="us-central1")
+        try:
+            self._model = GenerativeModel(
+                "publishers/meta/models/llama3-3-70b-instruct-maas",
+                system_instruction=self.system_instruction,
+            )
+        except Exception as e:
+            print(f"Actual Vertex Error: {e}")
+            self._model = GenerativeModel(
+                "llama-3.3-70b-instruct-maas",
+                system_instruction=self.system_instruction,
+            )
         self._initialized = True
 
     async def get_response(self, user_message: str) -> str:
@@ -46,8 +54,8 @@ class VertexLlamaClient:
             return ""
         try:
             response = await run_in_threadpool(self._model.generate_content, user_message)
-        except (exceptions.NotFound, grpc.RpcError) as exc:
-            print(f"Vertex AI MaaS prediction error: {type(exc).__name__}: {exc}")
+        except (exceptions.NotFound, grpc.RpcError) as e:
+            print(f"Actual Vertex Error: {e}")
             return (
                 "The IMEX assistant is currently processing a high volume of requests. "
                 "Please try your message again in a moment."
