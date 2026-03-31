@@ -39,6 +39,7 @@ class MessageHandler:
                     print(f"DEBUG: Processing message from {sender_id}")
                     ai_response = await self.llm_client.get_response(message_text)
                     if ai_response:
+                        print(f"DEBUG: AI response to send: {ai_response}")
                         await self._send_facebook_message(sender_id, ai_response)
                         sent_count += 1
         except Exception as exc:
@@ -47,15 +48,17 @@ class MessageHandler:
         return {"status": "processed", "messages_sent": sent_count}
 
     async def _send_facebook_message(self, recipient_id: str, text: str) -> None:
-        url = "https://graph.facebook.com/v19.0/me/messages"
+        url = (
+            "https://graph.facebook.com/v19.0/me/messages"
+            f"?access_token={settings.page_access_token}"
+        )
         payload = {"recipient": {"id": recipient_id}, "message": {"text": text}}
-        params = {"access_token": settings.page_access_token}
 
         response = await run_in_threadpool(
             requests.post,
             url,
-            params=params,
             json=payload,
             timeout=15,
         )
+        print(f"Meta Response: {response.status_code} - {response.text}")
         response.raise_for_status()
