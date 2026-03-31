@@ -32,17 +32,10 @@ class VertexLlamaClient:
         if self._initialized:
             return
         vertexai.init(project="imexassist-bot", location="us-central1")
-        try:
-            self._model = GenerativeModel(
-                "projects/imexassist-bot/locations/us-central1/publishers/meta/models/llama3-3-70b-instruct-maas",
-                system_instruction=self.system_instruction,
-            )
-        except Exception as e:
-            print(f"Actual Vertex Error: {e}")
-            self._model = GenerativeModel(
-                "llama-3.3-70b-instruct-maas",
-                system_instruction=self.system_instruction,
-            )
+        self._model = GenerativeModel(
+            "llama-3.3-70b-instruct-maas", system_instruction=self.system_instruction
+        )
+        print("SUCCESS: Llama 3.3 local connection established in us-central1")
         self._initialized = True
 
     async def get_response(self, user_message: str) -> str:
