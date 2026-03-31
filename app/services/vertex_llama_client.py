@@ -8,6 +8,8 @@ from vertexai.generative_models import GenerativeModel
 
 from app.config import settings
 
+vertexai.init(project="imexassist-bot", location="us-central1")
+
 
 class VertexLlamaClient:
     def __init__(
@@ -17,9 +19,9 @@ class VertexLlamaClient:
         model_name: str = settings.vertex_model_name,
     ) -> None:
         self.project_id = project_id
-        # Llama 3.3 MaaS GA is primarily served from us-central1.
-        self.region = "us-central1"
-        self.model_name = "llama-3.3-70b-instruct-maas"
+        self.region = region
+        self.model_name = model_name
+        self.model_id = "llama-3.3-70b-instruct-maas"
         self.system_instruction = (
             "You are the IMEX Digital Assistant, a professional logistics expert. "
             "You are helpful, concise, and represent the IMEX brand with a touch "
@@ -31,10 +33,12 @@ class VertexLlamaClient:
     def _ensure_initialized(self) -> None:
         if self._initialized:
             return
-        vertexai.init(project="imexassist-bot", location="us-central1")
-        self._model = GenerativeModel(
-            "llama-3.3-70b-instruct-maas", system_instruction=self.system_instruction
-        )
+        try:
+            self._model = GenerativeModel(
+                self.model_id, system_instruction=self.system_instruction
+            )
+        except Exception:
+            self._model = vertexai.generative_models.from_pretrained(self.model_id)
         print("SUCCESS: Llama 3.3 local connection established in us-central1")
         self._initialized = True
 
@@ -48,7 +52,7 @@ class VertexLlamaClient:
         try:
             response = await run_in_threadpool(self._model.generate_content, user_message)
         except (exceptions.NotFound, grpc.RpcError) as e:
-            print(f"Actual Vertex Error: {e}")
+            print(f"CRITICAL - Vertex Error: {type(e).__name__} - {str(e)}")
             return (
                 "The IMEX assistant is currently processing a high volume of requests. "
                 "Please try your message again in a moment."
