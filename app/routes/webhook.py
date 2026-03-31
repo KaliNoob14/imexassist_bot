@@ -1,6 +1,7 @@
 from typing import Any, Dict
 
 from fastapi import APIRouter, HTTPException, Query, Request
+from fastapi.responses import PlainTextResponse
 
 from app.config import settings
 from app.services.message_handler import MessageHandler
@@ -15,9 +16,9 @@ async def verify_webhook(
     hub_mode: str = Query(..., alias="hub.mode"),
     hub_verify_token: str = Query(..., alias="hub.verify_token"),
     hub_challenge: str = Query(..., alias="hub.challenge"),
-) -> str:
+) -> PlainTextResponse:
     if hub_mode == "subscribe" and hub_verify_token == settings.fb_verify_token:
-        return hub_challenge
+        return PlainTextResponse(content=hub_challenge)
     raise HTTPException(status_code=403, detail="Webhook verification failed")
 
 

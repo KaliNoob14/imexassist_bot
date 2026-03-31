@@ -10,7 +10,7 @@ load_dotenv()
 @dataclass(frozen=True)
 class Settings:
     app_name: str = os.getenv("APP_NAME", "imexassist-bot")
-    fb_page_token: str = os.getenv("FB_PAGE_TOKEN", "")
+    fb_page_token: str = os.getenv("EAATigQ5jnQwBREupQIQHy1nmnZBcOjTniXYaqTXBBoDKYKEN0cz47ZCMA9YCpNIPlt2XBsOBsJ1ZAQS5p7zf7lyn0HRyczhSozmGrlxaKFwWARA6rZAMafIcnbRkCCkNeRlMz83d77xJtdEyKWVie5iBDa0BmVQegn76NvYnBxZAhwxo7ZAgvk4XVYjdUOQRyzNLeZA7bIcRqfyKricJByTQgZDZD", "")
     fb_verify_token: str = os.getenv("FB_VERIFY_TOKEN", "IMEX_SECRET_2026")
     gcp_project_id: str = os.getenv("GCP_PROJECT_ID", "imexassist-bot")
     gcp_region: str = os.getenv("GCP_REGION", "europe-west1")
