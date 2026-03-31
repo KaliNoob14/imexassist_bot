@@ -1,5 +1,6 @@
 from typing import Any, Optional
 
+import grpc
 import vertexai
 from google.api_core import exceptions
 from fastapi.concurrency import run_in_threadpool
@@ -16,9 +17,14 @@ class VertexLlamaClient:
         model_name: str = settings.vertex_model_name,
     ) -> None:
         self.project_id = project_id
-        # Llama MaaS models are most stable through us-central1.
+        # Llama 3.3 MaaS GA is primarily served from us-central1.
         self.region = "us-central1"
-        self.model_name = "publishers/meta/models/llama3-3-70b-instruct-maas"
+        self.model_name = "llama-3.3-70b-instruct-maas"
+        self.system_instruction = (
+            "You are the IMEX Digital Assistant, a professional logistics expert. "
+            "You are helpful, concise, and represent the IMEX brand with a touch "
+            "of modern efficiency."
+        )
         self._initialized = False
         self._model: Optional[Any] = None
 
@@ -26,7 +32,9 @@ class VertexLlamaClient:
         if self._initialized:
             return
         vertexai.init(project=self.project_id, location=self.region)
-        self._model = GenerativeModel(self.model_name)
+        self._model = GenerativeModel(
+            model_name=self.model_name, system_instruction=self.system_instruction
+        )
         self._initialized = True
 
     async def get_response(self, user_message: str) -> str:
@@ -36,18 +44,14 @@ class VertexLlamaClient:
         self._ensure_initialized()
         if self._model is None:
             return ""
-        prompt = (
-            "You are the IMEX Digital Assistant for IMEX MCE MBT community management. "
-            "Be helpful, concise, and professional. If context is missing, ask a brief "
-            "clarifying question.\n\n"
-            f"User message: {user_message}\n"
-            "Assistant response:"
-        )
         try:
-            response = await run_in_threadpool(self._model.generate_content, prompt)
-        except (exceptions.InternalServerError, exceptions.ServiceUnavailable) as exc:
+            response = await run_in_threadpool(self._model.generate_content, user_message)
+        except (exceptions.NotFound, grpc.RpcError) as exc:
             print(f"Vertex AI MaaS prediction error: {type(exc).__name__}: {exc}")
-            return "I'm thinking a bit too hard, try again in a second"
+            return (
+                "The IMEX assistant is currently processing a high volume of requests. "
+                "Please try your message again in a moment."
+            )
         return getattr(response, "text", "").strip() or (
             "Thanks for your message. How can I help you with IMEX today?"
         )

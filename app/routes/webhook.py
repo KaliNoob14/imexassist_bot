@@ -1,3 +1,4 @@
+import asyncio
 from typing import Any, Dict
 
 from fastapi import APIRouter, HTTPException, Query, Request
@@ -9,6 +10,13 @@ from app.services.vertex_llama_client import VertexLlamaClient
 
 router = APIRouter()
 message_handler = MessageHandler(llm_client=VertexLlamaClient())
+
+
+async def _process_payload_safe(payload: Dict[str, Any]) -> None:
+    try:
+        await message_handler.handle(payload)
+    except Exception as exc:
+        print(f"Webhook background processing error: {type(exc).__name__}: {exc}")
 
 
 @router.get("/webhook")
@@ -29,7 +37,9 @@ async def receive_webhook(request: Request) -> Dict[str, Any]:
         if not isinstance(payload, dict):
             print("DEBUG: Invalid webhook payload type received")
             return {"status": "ok", "processed": False}
-        return await message_handler.handle(payload)
+        # Return 200 immediately to avoid Facebook retry duplicates.
+        asyncio.create_task(_process_payload_safe(payload))
+        return {"status": "ok", "processed": True}
     except Exception as exc:
         # Always return 200 so Meta does not retry flood on transient failures.
         print(f"Webhook processing error: {type(exc).__name__}: {exc}")
