@@ -14,7 +14,7 @@ class VertexLlamaClient:
         region: str = settings.gcp_region,
         model_name: str = settings.vertex_model_name,
     ) -> None:
-        self.project_id = 1016106875965
+        self.project_id = project_id
         self.region = region
         self.model_name = model_name
         self._initialized = False
@@ -27,13 +27,21 @@ class VertexLlamaClient:
         self._model = GenerativeModel(self.model_name)
         self._initialized = True
 
-    async def generate_text(self, prompt: str) -> str:
+    async def get_response(self, user_message: str) -> str:
         """
-        Async-friendly wrapper for Vertex Model Garden calls.
-        A full prompt/response strategy can be added in the next implementation step.
+        Generate a concise assistant response with a base IMEX persona prompt.
         """
         self._ensure_initialized()
         if self._model is None:
             return ""
+        prompt = (
+            "You are the IMEX Digital Assistant for IMEX MCE MBT community management. "
+            "Be helpful, concise, and professional. If context is missing, ask a brief "
+            "clarifying question.\n\n"
+            f"User message: {user_message}\n"
+            "Assistant response:"
+        )
         response = await run_in_threadpool(self._model.generate_content, prompt)
-        return getattr(response, "text", "")
+        return getattr(response, "text", "").strip() or (
+            "Thanks for your message. How can I help you with IMEX today?"
+        )
