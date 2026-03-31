@@ -34,7 +34,7 @@ class VertexLlamaClient:
         vertexai.init(project="imexassist-bot", location="us-central1")
         try:
             self._model = GenerativeModel(
-                "publishers/meta/models/llama3-3-70b-instruct-maas",
+                "projects/imexassist-bot/locations/us-central1/publishers/meta/models/llama3-3-70b-instruct-maas",
                 system_instruction=self.system_instruction,
             )
         except Exception as e:
