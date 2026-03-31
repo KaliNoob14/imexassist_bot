@@ -8,7 +8,11 @@ from vertexai.generative_models import GenerativeModel
 
 from app.config import settings
 
-vertexai.init(project="imexassist-bot", location="us-central1")
+LOCATION = "us-central1"
+API_ENDPOINT = "us-central1-aiplatform.googleapis.com"
+vertexai.init(
+    project="imexassist-bot", location=LOCATION, api_endpoint=API_ENDPOINT
+)
 
 
 class VertexLlamaClient:
@@ -21,7 +25,7 @@ class VertexLlamaClient:
         self.project_id = project_id
         self.region = region
         self.model_name = model_name
-        self.model_id = "llama-3.3-70b-instruct-maas"
+        self.model_id = "meta/llama-3.3-70b-instruct-maas"
         self.system_instruction = (
             "You are the IMEX Digital Assistant, a professional logistics expert. "
             "You are helpful, concise, and represent the IMEX brand with a touch "
@@ -33,13 +37,11 @@ class VertexLlamaClient:
     def _ensure_initialized(self) -> None:
         if self._initialized:
             return
-        try:
-            self._model = GenerativeModel(
-                self.model_id, system_instruction=self.system_instruction
-            )
-        except Exception:
-            self._model = vertexai.generative_models.from_pretrained(self.model_id)
-        print("SUCCESS: Llama 3.3 local connection established in us-central1")
+        self._model = GenerativeModel(
+            "meta/llama-3.3-70b-instruct-maas",
+            system_instruction=self.system_instruction,
+        )
+        print(f"SUCCESS: Connected to Llama 3.3 MaaS in {LOCATION}")
         self._initialized = True
 
     async def get_response(self, user_message: str) -> str:
