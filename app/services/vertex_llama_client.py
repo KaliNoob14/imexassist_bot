@@ -1,6 +1,7 @@
 from typing import Any, Optional
 
 import vertexai
+from google.api_core import exceptions
 from fastapi.concurrency import run_in_threadpool
 from vertexai.generative_models import GenerativeModel
 
@@ -15,12 +16,9 @@ class VertexLlamaClient:
         model_name: str = settings.vertex_model_name,
     ) -> None:
         self.project_id = project_id
-        # Llama 3 70B MaaS is most stable in us-central1.
+        # Llama MaaS models are most stable through us-central1.
         self.region = "us-central1"
-        self.model_name = (
-            "projects/imexassist-bot/locations/us-central1/publishers/meta/models/"
-            "llama3-70b-instruct-maas"
-        )
+        self.model_name = "publishers/meta/models/llama-3.3-70b-instruct-maas"
         self._initialized = False
         self._model: Optional[Any] = None
 
@@ -47,9 +45,9 @@ class VertexLlamaClient:
         )
         try:
             response = await run_in_threadpool(self._model.generate_content, prompt)
-        except Exception as exc:
+        except (exceptions.InternalServerError, exceptions.ServiceUnavailable) as exc:
             print(f"Vertex AI MaaS prediction error: {type(exc).__name__}: {exc}")
-            raise
+            return "I'm thinking a bit too hard, try again in a second"
         return getattr(response, "text", "").strip() or (
             "Thanks for your message. How can I help you with IMEX today?"
         )
