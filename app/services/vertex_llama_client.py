@@ -15,33 +15,20 @@ class VertexLlamaClient:
         model_name: str = settings.vertex_model_name,
     ) -> None:
         self.project_id = project_id
-        self.region = region
-        self.model_name = self._normalize_model_name(model_name)
-        self._initialized = False
-        self._model: Optional[Any] = None
-
-    def _normalize_model_name(self, model_name: str) -> str:
-        if model_name.startswith("projects/"):
-            return model_name
-        return (
-            f"projects/{self.project_id}/locations/{self.region}/publishers/meta/models/"
+        # Llama 3 70B MaaS is most stable in us-central1.
+        self.region = "us-central1"
+        self.model_name = (
+            "projects/imexassist-bot/locations/us-central1/publishers/meta/models/"
             "llama3-70b-instruct-maas"
         )
+        self._initialized = False
+        self._model: Optional[Any] = None
 
     def _ensure_initialized(self) -> None:
         if self._initialized:
             return
         vertexai.init(project=self.project_id, location=self.region)
-        try:
-            self._model = GenerativeModel(self.model_name)
-        except ValueError:
-            # Some Vertex AI SDK versions require preview generative models
-            # for Model Garden publisher resources.
-            from vertexai.preview.generative_models import (
-                GenerativeModel as PreviewGenerativeModel,
-            )
-
-            self._model = PreviewGenerativeModel(self.model_name)
+        self._model = GenerativeModel(self.model_name)
         self._initialized = True
 
     async def get_response(self, user_message: str) -> str:
@@ -58,7 +45,11 @@ class VertexLlamaClient:
             f"User message: {user_message}\n"
             "Assistant response:"
         )
-        response = await run_in_threadpool(self._model.generate_content, prompt)
+        try:
+            response = await run_in_threadpool(self._model.generate_content, prompt)
+        except Exception as exc:
+            print(f"Vertex AI MaaS prediction error: {type(exc).__name__}: {exc}")
+            raise
         return getattr(response, "text", "").strip() or (
             "Thanks for your message. How can I help you with IMEX today?"
         )
