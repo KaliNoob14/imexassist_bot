@@ -1,5 +1,6 @@
 steps:
-  - name: "gcr.io/cloud-builders/docker"
+  # Step 1: Build the Docker image
+  - name: 'gcr.io/cloud-builders/docker'
     args:
       [
         "build",
@@ -8,14 +9,16 @@ steps:
         ".",
       ]
 
-  - name: "gcr.io/cloud-builders/docker"
+  # Step 2: Push the image to Artifact Registry
+  - name: 'gcr.io/cloud-builders/docker'
     args:
       [
         "push",
         "europe-west1-docker.pkg.dev/imexassist-bot/imex-repo/imex-bot:$SHORT_SHA",
       ]
 
-  - name: "gcr.io/google.com/cloudsdktool/cloud-sdk"
+  # Step 3: Deploy to Cloud Run
+  - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
     entrypoint: gcloud
     args:
       [
@@ -34,5 +37,5 @@ steps:
 images:
   - "europe-west1-docker.pkg.dev/imexassist-bot/imex-repo/imex-bot:$SHORT_SHA"
 
-  options:
+options:
   logging: CLOUD_LOGGING_ONLY
