@@ -5,7 +5,7 @@ import requests
 from dotenv import load_dotenv
 from fastapi.concurrency import run_in_threadpool
 
-from app.services.vertex_llama_client import VertexLlamaClient
+from app.services.llama_client import LlamaClient
 
 load_dotenv()
 PAGE_ACCESS_TOKEN = os.getenv('PAGE_ACCESS_TOKEN')
@@ -14,7 +14,7 @@ if not PAGE_ACCESS_TOKEN:
 
 
 class MessageHandler:
-    def __init__(self, llm_client: VertexLlamaClient) -> None:
+    def __init__(self, llm_client: LlamaClient) -> None:
         self.llm_client = llm_client
 
     async def handle(self, webhook_payload: Dict[str, Any]) -> Dict[str, Any]:
@@ -41,7 +41,9 @@ class MessageHandler:
                         continue
 
                     print(f"DEBUG: Processing message from {sender_id}")
-                    ai_response = await self.llm_client.get_response(message_text)
+                    ai_response = await run_in_threadpool(
+                        self.llm_client.get_llama_response, message_text
+                    )
                     if ai_response:
                         print(f"DEBUG: AI response to send: {ai_response}")
                         await self._send_facebook_message(sender_id, ai_response)

@@ -5,11 +5,11 @@ from fastapi import APIRouter, HTTPException, Query, Request
 from fastapi.responses import PlainTextResponse
 
 from app.config import settings
+from app.services.llama_client import LlamaClient
 from app.services.message_handler import MessageHandler
-from app.services.vertex_llama_client import VertexLlamaClient
 
 router = APIRouter()
-message_handler = MessageHandler(llm_client=VertexLlamaClient())
+message_handler = MessageHandler(llm_client=LlamaClient())
 
 
 async def _process_payload_safe(payload: Dict[str, Any]) -> None:
