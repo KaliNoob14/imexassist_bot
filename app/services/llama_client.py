@@ -94,7 +94,8 @@ class LlamaClient:
             if not context_lines:
                 return prompt
 
-            return f"{'\n'.join(context_lines)}\n\nUser request: {prompt}"
+            joined_context = "\n".join(context_lines)
+            return f"{joined_context}\n\nUser request: {prompt}"
         except Exception:
             return prompt
 

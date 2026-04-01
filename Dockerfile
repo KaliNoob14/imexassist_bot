@@ -14,3 +14,5 @@ COPY . .
 EXPOSE 8080
 
 CMD ["sh", "-c", "uvicorn main:app --host 0.0.0.0 --port ${PORT}"]
+# Pre-download the ChromaDB embedding model
+RUN python -c "from chromadb.utils import embedding_functions; embedding_functions.DefaultEmbeddingFunction()"
