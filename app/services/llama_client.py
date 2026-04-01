@@ -1,6 +1,7 @@
 import os
 
 import chromadb
+from chromadb.utils import embedding_functions
 from groq import Groq
 
 
@@ -9,6 +10,12 @@ class LlamaClient:
         self.api_key = os.environ.get("GROQ_API_KEY")
         self.client = Groq(api_key=self.api_key) if self.api_key else None
         self.model_id = "llama-3.3-70b-versatile"
+        self.embedding_model_id = "all-MiniLM-L6-v2"
+        self.embedding_cache_dir = os.environ.get(
+            "SENTENCE_TRANSFORMERS_HOME", "data/models/sentence-transformers"
+        )
+        os.makedirs(self.embedding_cache_dir, exist_ok=True)
+        os.environ["SENTENCE_TRANSFORMERS_HOME"] = self.embedding_cache_dir
         self.system_instruction = (
             "You are the Official Digital Assistant for Groupe IMEX MCE MBT.\n\n"
             "Core Knowledge Base:\n"
@@ -31,11 +38,18 @@ class LlamaClient:
         self.chroma_client = chromadb.PersistentClient(
             path=os.environ.get("CHROMA_PATH", "data/chroma")
         )
+        self.embedding_function = (
+            embedding_functions.SentenceTransformerEmbeddingFunction(
+                model_name=self.embedding_model_id, device="cpu"
+            )
+        )
         self.collection = self.chroma_client.get_or_create_collection(
-            name=self.collection_name
+            name=self.collection_name,
+            embedding_function=self.embedding_function,
         )
         self.website_collection = self.chroma_client.get_or_create_collection(
-            name="imex_knowledge"
+            name="imex_knowledge",
+            embedding_function=self.embedding_function,
         )
 
     def _is_factual_service_question(self, prompt: str) -> bool:

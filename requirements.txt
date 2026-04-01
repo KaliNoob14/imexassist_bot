@@ -5,3 +5,4 @@ requests
 groq
 chromadb
 beautifulsoup4
+sentence-transformers
