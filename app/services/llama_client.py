@@ -4,18 +4,33 @@ import chromadb
 from chromadb.utils import embedding_functions
 from groq import Groq
 
+EMBEDDING_MODEL_ID = "all-MiniLM-L6-v2"
+EMBEDDING_CACHE_DIR = os.environ.get(
+    "SENTENCE_TRANSFORMERS_HOME", "data/models/sentence-transformers"
+)
+os.makedirs(EMBEDDING_CACHE_DIR, exist_ok=True)
+os.environ["SENTENCE_TRANSFORMERS_HOME"] = EMBEDDING_CACHE_DIR
+
+CHROMA_PATH = os.environ.get("CHROMA_PATH", "data/chroma")
+GLOBAL_CHROMA_CLIENT = chromadb.PersistentClient(path=CHROMA_PATH)
+GLOBAL_EMBEDDING_FUNCTION = embedding_functions.SentenceTransformerEmbeddingFunction(
+    model_name=EMBEDDING_MODEL_ID, device="cpu"
+)
+GLOBAL_MESSAGES_COLLECTION = GLOBAL_CHROMA_CLIENT.get_or_create_collection(
+    name="imex_messages",
+    embedding_function=GLOBAL_EMBEDDING_FUNCTION,
+)
+GLOBAL_WEBSITE_COLLECTION = GLOBAL_CHROMA_CLIENT.get_or_create_collection(
+    name="imex_knowledge",
+    embedding_function=GLOBAL_EMBEDDING_FUNCTION,
+)
+
 
 class LlamaClient:
     def __init__(self) -> None:
         self.api_key = os.environ.get("GROQ_API_KEY")
         self.client = Groq(api_key=self.api_key) if self.api_key else None
         self.model_id = "llama-3.3-70b-versatile"
-        self.embedding_model_id = "all-MiniLM-L6-v2"
-        self.embedding_cache_dir = os.environ.get(
-            "SENTENCE_TRANSFORMERS_HOME", "data/models/sentence-transformers"
-        )
-        os.makedirs(self.embedding_cache_dir, exist_ok=True)
-        os.environ["SENTENCE_TRANSFORMERS_HOME"] = self.embedding_cache_dir
         self.system_instruction = (
             "You are the Official Digital Assistant for Groupe IMEX MCE MBT.\n\n"
             "Core Knowledge Base:\n"
@@ -32,25 +47,12 @@ class LlamaClient:
             "- Style: Professional, welcoming, and Agile.\n"
             "- Always use the catchphrase: Nous sommes la pour vous faciliter la vie.\n"
             "- Fallback for specific container quotes: Politely ask for the user's email and Port de depart so a human expert can follow up.\n"
-            "- Multilingual: Detect Malagasy, French, or English, and respond in the same language."
+            "- Multilingual: Detect Malagasy, French, or English, and respond in the same language.\n"
+            "- Keep all responses under 3 sentences unless specifically asked for a detailed guide.\n"
+            "- Professional, direct, and helpful. No fluff. Use bullet points for lists."
         )
-        self.collection_name = "imex_messages"
-        self.chroma_client = chromadb.PersistentClient(
-            path=os.environ.get("CHROMA_PATH", "data/chroma")
-        )
-        self.embedding_function = (
-            embedding_functions.SentenceTransformerEmbeddingFunction(
-                model_name=self.embedding_model_id, device="cpu"
-            )
-        )
-        self.collection = self.chroma_client.get_or_create_collection(
-            name=self.collection_name,
-            embedding_function=self.embedding_function,
-        )
-        self.website_collection = self.chroma_client.get_or_create_collection(
-            name="imex_knowledge",
-            embedding_function=self.embedding_function,
-        )
+        self.collection = GLOBAL_MESSAGES_COLLECTION
+        self.website_collection = GLOBAL_WEBSITE_COLLECTION
 
     def _is_factual_service_question(self, prompt: str) -> bool:
         text = prompt.lower()

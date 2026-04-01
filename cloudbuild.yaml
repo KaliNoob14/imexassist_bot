@@ -29,6 +29,8 @@ steps:
         "europe-west1-docker.pkg.dev/imexassist-bot/imex-repo/imex-bot:$SHORT_SHA",
         "--region",
         "europe-west1",
+        "--memory",
+        "1Gi",
         "--platform",
         "managed",
         "--allow-unauthenticated",

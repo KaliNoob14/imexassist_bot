@@ -41,13 +41,17 @@ class MessageHandler:
                         continue
 
                     print(f"DEBUG: Processing message from {sender_id}")
+                    await self._send_sender_action(sender_id, "typing_on")
                     ai_response = await run_in_threadpool(
                         self.llm_client.get_llama_response, message_text
                     )
                     if ai_response:
                         print(f"DEBUG: AI response to send: {ai_response}")
+                        await self._send_sender_action(sender_id, "typing_off")
                         await self._send_facebook_message(sender_id, ai_response)
                         sent_count += 1
+                    else:
+                        await self._send_sender_action(sender_id, "typing_off")
         except Exception as exc:
             print(f"Message handler error: {type(exc).__name__}: {exc}")
 
@@ -72,3 +76,25 @@ class MessageHandler:
         print(f"Meta Response: {fb_response.status_code} - {fb_response.text}")
         print(fb_response.text)
         fb_response.raise_for_status()
+
+    async def _send_sender_action(self, recipient_id: str, action: str) -> None:
+        if not PAGE_ACCESS_TOKEN:
+            print("CRITICAL: PAGE_ACCESS_TOKEN is undefined!")
+            return
+
+        url = "https://graph.facebook.com/v19.0/me/messages"
+        payload = {"recipient": {"id": recipient_id}, "sender_action": action}
+        params = {"access_token": PAGE_ACCESS_TOKEN}
+
+        try:
+            fb_response = await run_in_threadpool(
+                requests.post,
+                url,
+                params=params,
+                json=payload,
+                timeout=10,
+            )
+            print(f"Meta sender_action ({action}): {fb_response.status_code}")
+            fb_response.raise_for_status()
+        except Exception as exc:
+            print(f"Sender action error ({action}): {type(exc).__name__}: {exc}")
