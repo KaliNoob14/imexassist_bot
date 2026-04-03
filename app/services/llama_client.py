@@ -1,29 +1,10 @@
 import os
+import json
+import re
+from pathlib import Path
+from typing import Any, Dict, List
 
-import chromadb
-from chromadb.utils import embedding_functions
 from groq import Groq
-
-EMBEDDING_MODEL_ID = "all-MiniLM-L6-v2"
-EMBEDDING_CACHE_DIR = os.environ.get(
-    "SENTENCE_TRANSFORMERS_HOME", "data/models/sentence-transformers"
-)
-os.makedirs(EMBEDDING_CACHE_DIR, exist_ok=True)
-os.environ["SENTENCE_TRANSFORMERS_HOME"] = EMBEDDING_CACHE_DIR
-
-CHROMA_PATH = os.environ.get("CHROMA_PATH", "data/chroma")
-GLOBAL_CHROMA_CLIENT = chromadb.PersistentClient(path=CHROMA_PATH)
-GLOBAL_EMBEDDING_FUNCTION = embedding_functions.SentenceTransformerEmbeddingFunction(
-    model_name=EMBEDDING_MODEL_ID, device="cpu"
-)
-GLOBAL_MESSAGES_COLLECTION = GLOBAL_CHROMA_CLIENT.get_or_create_collection(
-    name="imex_messages",
-    embedding_function=GLOBAL_EMBEDDING_FUNCTION,
-)
-GLOBAL_WEBSITE_COLLECTION = GLOBAL_CHROMA_CLIENT.get_or_create_collection(
-    name="imex_knowledge",
-    embedding_function=GLOBAL_EMBEDDING_FUNCTION,
-)
 
 
 class LlamaClient:
@@ -31,89 +12,87 @@ class LlamaClient:
         self.api_key = os.environ.get("GROQ_API_KEY")
         self.client = Groq(api_key=self.api_key) if self.api_key else None
         self.model_id = "llama-3.3-70b-versatile"
+        self.drills_path = Path("data/imex_drills.json")
+        self.drills = self._load_drills()
         self.system_instruction = (
-            "You are the Official Digital Assistant for Groupe IMEX MCE MBT.\n\n"
-            "Core Knowledge Base:\n"
-            "- Identity: We are a global freight forwarding and sourcing company present on 4 continents: "
-            "Madagascar, France, China, Canada, Indonesia, and Thailand.\n"
-            "- Sourcing: We help clients find the best suppliers and products globally.\n"
-            "- Groupage: Our specialty. We consolidate shipments to reduce costs - plus vous groupez, plus vous economisez.\n"
-            "- Transit & Logistics: We handle all customs clearance (dedouanement) and administrative paperwork.\n"
-            "- Travel: We offer Visa & Billetterie services for business and personal travel.\n"
-            "- Domestic: We ensure delivery (Livraison) across all of Madagascar.\n\n"
-            "Contact Details:\n"
-            "- Antananarivo: Ambohimanambola (near Hintsy Hotel). Phones: +261 34 05 828 71 / +261 32 62 269 37.\n"
-            "Constraints and Tone:\n"
-            "- Style: Professional, welcoming, and Agile.\n"
-            "- Always use the catchphrase: Nous sommes la pour vous faciliter la vie.\n"
-            "- Fallback for specific container quotes: Politely ask for the user's email and Port de depart so a human expert can follow up.\n"
-            "- Multilingual: Detect Malagasy, French, or English, and respond in the same language.\n"
-            "- Keep all responses under 3 sentences unless specifically asked for a detailed guide.\n"
-            "- Professional, direct, and helpful. No fluff. Use bullet points for lists."
+            "You are the IMEX Digital Engine.\n"
+            "You ONLY answer based on the provided Drills (Examples) and IMEX core identity.\n"
+            "IMEX core identity:\n"
+            "- Freight forwarding and sourcing company.\n"
+            "- Services include groupage, customs clearance, logistics support, and transport assistance.\n"
+            "Strict rules:\n"
+            "1) Do NOT use external website data, assumptions, or general world knowledge.\n"
+            "2) Prioritize the Expert response style and format shown in the drills.\n"
+            "3) If the question is not covered by drills or core identity, reply politely in the user's language (Malagasy/French):\n"
+            "\"Miala tsiny, mbola tsy manana ny valiny marina momba izany aho amin'izao fotoana izao. "
+            "Afaka manampy anao amin'ny [Topic 1] na [Topic 2] ve aho?\"\n"
+            "4) Keep responses concise and actionable."
         )
-        self.collection = GLOBAL_MESSAGES_COLLECTION
-        self.website_collection = GLOBAL_WEBSITE_COLLECTION
 
-    def _is_factual_service_question(self, prompt: str) -> bool:
-        text = prompt.lower()
-        keywords = [
-            "service",
-            "services",
-            "freight",
-            "groupage",
-            "customs",
-            "dedouanement",
-            "visa",
-            "billetterie",
-            "delivery",
-            "livraison",
-            "sourcing",
-            "quote",
-            "price",
-            "rate",
-        ]
-        return any(keyword in text for keyword in keywords)
+    def _load_drills(self) -> List[Dict[str, Any]]:
+        try:
+            if not self.drills_path.exists():
+                return []
+            with self.drills_path.open("r", encoding="utf-8") as file:
+                payload = json.load(file)
+            if isinstance(payload, list):
+                return [item for item in payload if isinstance(item, dict)]
+            return []
+        except Exception as exc:
+            print(f"Drills load error: {type(exc).__name__}: {exc}")
+            return []
+
+    def _tokenize(self, text: str) -> set:
+        return set(re.findall(r"[a-zA-Z0-9_]{3,}", text.lower()))
+
+    def _drill_text(self, drill: Dict[str, Any]) -> str:
+        parts = [str(drill.get("description", ""))]
+        for msg in drill.get("messages", []) if isinstance(drill.get("messages"), list) else []:
+            if isinstance(msg, dict):
+                parts.append(str(msg.get("content", "")))
+        return " ".join(parts).strip()
+
+    def _select_relevant_drills(self, prompt: str, top_k: int = 3) -> List[Dict[str, Any]]:
+        if not self.drills:
+            return []
+        prompt_tokens = self._tokenize(prompt)
+        if not prompt_tokens:
+            return self.drills[:top_k]
+
+        scored: List[tuple[int, Dict[str, Any]]] = []
+        for drill in self.drills:
+            drill_tokens = self._tokenize(self._drill_text(drill))
+            score = len(prompt_tokens & drill_tokens)
+            scored.append((score, drill))
+
+        scored.sort(key=lambda item: item[0], reverse=True)
+        selected = [item[1] for item in scored[:top_k] if item[0] > 0]
+        return selected if selected else self.drills[:top_k]
 
     def _build_augmented_prompt(self, prompt: str) -> str:
-        try:
-            context_lines = []
+        relevant_drills = self._select_relevant_drills(prompt, top_k=3)
+        if not relevant_drills:
+            return f"Drills: none available.\n\nUser request: {prompt}"
 
-            if self._is_factual_service_question(prompt):
-                website_results = self.website_collection.query(
-                    query_texts=[prompt],
-                    n_results=2,
-                    where={"source": "website"},
-                )
-                website_docs = website_results.get("documents", [[]])
-                top_docs = (
-                    website_docs[0]
-                    if website_docs and isinstance(website_docs[0], list)
-                    else []
-                )
-                for doc in top_docs:
-                    if isinstance(doc, str) and doc.strip():
-                        context_lines.append(
-                            f"Context: In a similar past case, the agent said: {doc.strip()}"
-                        )
+        drill_blocks: List[str] = []
+        for idx, drill in enumerate(relevant_drills, start=1):
+            language = drill.get("language", "")
+            description = drill.get("description", "")
+            messages = drill.get("messages", [])
+            expert_examples = []
+            if isinstance(messages, list):
+                for msg in messages:
+                    if isinstance(msg, dict) and msg.get("role") == "assistant":
+                        expert_examples.append(str(msg.get("content", "")).strip())
+            expert_text = "\n".join(
+                f"- Expert example: {example}" for example in expert_examples[:2] if example
+            )
+            drill_blocks.append(
+                f"Drill {idx}\nLanguage: {language}\nDescription: {description}\n{expert_text}".strip()
+            )
 
-            history_results = self.collection.query(query_texts=[prompt], n_results=2)
-            metadatas = history_results.get("metadatas", [[]])
-            top_items = metadatas[0] if metadatas and isinstance(metadatas[0], list) else []
-            for item in top_items:
-                if isinstance(item, dict):
-                    response = item.get("answer")
-                    if isinstance(response, str) and response.strip():
-                        context_lines.append(
-                            f"Context: In a similar past case, the agent said: {response.strip()}"
-                        )
-
-            if not context_lines:
-                return prompt
-
-            joined_context = "\n".join(context_lines)
-            return f"{joined_context}\n\nUser request: {prompt}"
-        except Exception:
-            return prompt
+        drills_context = "\n\n".join(drill_blocks)
+        return f"Relevant Drills (Examples):\n{drills_context}\n\nUser request: {prompt}"
 
     def get_llama_response(self, prompt: str) -> str:
         if not self.api_key or self.client is None:

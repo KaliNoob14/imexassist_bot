@@ -42,16 +42,29 @@ class MessageHandler:
 
                     print(f"DEBUG: Processing message from {sender_id}")
                     await self._send_sender_action(sender_id, "typing_on")
-                    ai_response = await run_in_threadpool(
-                        self.llm_client.get_llama_response, message_text
-                    )
-                    if ai_response:
-                        print(f"DEBUG: AI response to send: {ai_response}")
+
+                    ai_response = ""
+                    try:
+                        ai_response = await run_in_threadpool(
+                            self.llm_client.get_llama_response, message_text
+                        )
+                    except Exception as exc:
+                        print(f"AI generation error: {type(exc).__name__}: {exc}")
                         await self._send_sender_action(sender_id, "typing_off")
-                        await self._send_facebook_message(sender_id, ai_response)
-                        sent_count += 1
-                    else:
+                        continue
+                    finally:
+                        # Keep this block for future typing refresh/cleanup hooks.
+                        pass
+
+                    if not ai_response:
+                        print("AI generation returned empty response")
                         await self._send_sender_action(sender_id, "typing_off")
+                        continue
+
+                    print(f"DEBUG: AI response to send: {ai_response}")
+                    await self._send_sender_action(sender_id, "typing_off")
+                    await self._send_facebook_message(sender_id, ai_response)
+                    sent_count += 1
         except Exception as exc:
             print(f"Message handler error: {type(exc).__name__}: {exc}")
 

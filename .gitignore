@@ -1,3 +1,14 @@
-__pycache__/
-*.pyc
+# IMEX Training Tools & Data
+scripts/drill_generator.html
+data/imex_drills.json
+
+# Configuration & IDE
+.cursorrules
 .env
+.env.local
+.DS_Store
+
+# Python/Node dependencies
+__pycache__/
+node_modules/
+venv/
